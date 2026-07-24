@@ -37,5 +37,5 @@
 - WebM 使用软件 VP9 + Opus，不支持硬件加速
 - 硬件编码器依赖本机驱动与 FFmpeg 编译支持
 
-[Unreleased]: https://github.com/example/ffmpeg_tool/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/example/ffmpeg_tool/releases/tag/v1.0.0
+[Unreleased]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/moon-stack-OAo/ffmpeg_tool/releases/tag/v1.0.0

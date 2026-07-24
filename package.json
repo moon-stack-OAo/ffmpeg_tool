@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_OWNER/ffmpeg_tool.git"
+    "url": "https://github.com/moon-stack-OAo/ffmpeg_tool.git"
   },
   "scripts": {
     "dev": "electron-vite dev",

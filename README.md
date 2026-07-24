@@ -104,19 +104,9 @@ git push origin v1.0.0
 
 基于 **electron-updater**，从 **GitHub Releases** 检查新版本。
 
-### 启用前必改
+### 更新源
 
-1. `package.json` → `repository.url`  
-2. `electron-builder.yml` → `publish.owner` / `publish.repo`  
-
-改成你的真实 GitHub 仓库，例如：
-
-```yaml
-publish:
-  provider: github
-  owner: your-name
-  repo: ffmpeg_tool
-```
+当前仓库：`moon-stack-OAo/ffmpeg_tool`（与 `package.json` / `electron-builder.yml` 一致）。
 
 ### 行为说明
 

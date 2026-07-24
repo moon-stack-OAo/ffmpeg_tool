@@ -11,10 +11,9 @@ asarUnpack:
   - node_modules/ffprobe-static/**
 extraResources: []
 # 自动更新：从 GitHub Releases 拉取 latest.yml / 安装包
-# 请改成你的仓库 owner / repo，并与 package.json 的 repository 保持一致
 publish:
   provider: github
-  owner: YOUR_GITHUB_OWNER
+  owner: moon-stack-OAo
   repo: ffmpeg_tool
   releaseType: release
 win:

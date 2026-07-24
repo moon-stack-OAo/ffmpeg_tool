@@ -1,0 +1,40 @@
+appId: com.ffmpeg.tool
+productName: FFmpeg视频压缩工具
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - node_modules/ffmpeg-static/**
+  - node_modules/ffprobe-static/**
+extraResources: []
+# 自动更新：从 GitHub Releases 拉取 latest.yml / 安装包
+# 请改成你的仓库 owner / repo，并与 package.json 的 repository 保持一致
+publish:
+  provider: github
+  owner: YOUR_GITHUB_OWNER
+  repo: ffmpeg_tool
+  releaseType: release
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  category: public.app-category.video
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: FFmpeg视频压缩工具
+  # 便于 electron-updater 差分/覆盖安装
+  differentialPackage: true

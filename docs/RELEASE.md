@@ -38,7 +38,8 @@
    若远程已存在 `v1.0.0`，需协商是否覆盖或改为 `1.0.1`（勿擅自 force）。
 
 5. **GitHub Actions Release**  
-   推送 tag 后触发 `Release` 工作流：在 Windows 上打包并上传 GitHub Release（含安装包与 `latest.yml`，供自动更新使用）。
+   推送 tag 后触发 `Release` 工作流：在 Windows 上打包并上传 GitHub Release（含安装包与 `latest.yml`，供自动更新使用）。  
+   **Release 正文**由 `scripts/extract-changelog.mjs` 从 `CHANGELOG.md` 对应 `## [x.y.z]` 小节生成（`release-notes.md` / 产物旁 `RELEASE_NOTES.md`），不再仅依赖 GitHub 自动生成的 commit 列表。
 
 6. **发布后检查**
     - Release 页产物与说明是否完整

@@ -34,6 +34,26 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test
+        run: npm test
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=${TAG} version=${VERSION}"
+
+      - name: Extract changelog for release notes
+        shell: bash
+        run: |
+          node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
+          echo "----- release-notes.md (preview) -----"
+          head -n 40 release-notes.md || true
+
       - name: Build & package (Windows)
         run: npm run dist:win
         env:
@@ -42,16 +62,29 @@ jobs:
           # 供 electron-builder 发布元数据（latest.yml）写入 release 目录
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Attach notes next to build artifacts
+        shell: bash
+        run: |
+          mkdir -p release
+          cp -f release-notes.md release/RELEASE_NOTES.md
+          # 再跑一次：脚本在 release/ 存在时会同步 RELEASE_NOTES.md
+          node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
+
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: FFmpeg视频压缩工具 v${{ steps.ver.outputs.version }}
           draft: false
-          generate_release_notes: true
+          # 以 CHANGELOG 当前版本小节为主；关闭自动生成以免冲掉中文说明
+          generate_release_notes: false
+          body_path: release-notes.md
           # electron-updater 需要 latest.yml + 安装包（及可选 blockmap）
           files: |
             release/*.exe
             release/latest.yml
             release/*.blockmap
+            release/RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -78,21 +111,47 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test
+        run: npm test
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog for release notes
+        run: node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
+
       - name: Build & package (macOS)
         run: npm run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach notes next to build artifacts
+        run: |
+          mkdir -p release
+          cp -f release-notes.md release/RELEASE_NOTES.md
+          node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: FFmpeg视频压缩工具 v${{ steps.ver.outputs.version }}
           draft: false
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-notes.md
           files: |
             release/*.dmg
             release/*.zip
             release/*.yml
             release/*.yaml
             release/*.blockmap
+            release/RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

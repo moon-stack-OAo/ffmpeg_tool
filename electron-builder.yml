@@ -19,11 +19,13 @@ publish:
 # 品牌图标：build/icon.ico（Win）/ build/icon.png（通用源）
 win:
   icon: build/icon.ico
+  # 可执行文件/安装包使用 ASCII 名称，避免中文路径与 CI 上传问题；界面仍用 productName
+  executableName: ffmpeg-tool
   target:
     - target: nsis
       arch:
         - x64
-  artifactName: ${productName}-${version}-win-${arch}.${ext}
+  artifactName: ffmpeg-tool-${version}-win-${arch}.${ext}
   # 代码签名占位（有证书时再启用，勿在无证书 CI 强制签名）
   # sign: path/to/sign-tool-or-custom-script
   # certificateFile: path/to/cert.pfx

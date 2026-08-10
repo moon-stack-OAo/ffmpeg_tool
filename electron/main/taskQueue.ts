@@ -1,7 +1,9 @@
-import type {BrowserWindow} from 'electron'
-import type {CompressTask, ProgressPayload, TaskEndPayload} from '../../shared/types'
-import {IpcChannels} from '../../shared/types'
-import {buildOutputPath, detectHardwareEncoders, getFileSize, runCompress, uniqueOutputPath} from './ffmpeg'
+import { Notification, shell, type BrowserWindow } from 'electron'
+import path from 'path'
+import type { CompressTask, ProgressPayload, TaskEndPayload } from '../../shared/types'
+import { IpcChannels } from '../../shared/types'
+import { buildOutputPath, detectHardwareEncoders, getFileSize, runCompress, uniqueOutputPath } from './ffmpeg'
+import { getSettings } from './settings'
 
 interface QueueItem {
   task: CompressTask
@@ -13,6 +15,7 @@ interface QueueItem {
  * - 可配置 concurrency（默认 2），同时跑 N 个 ffmpeg
  * - 支持单任务 / 全部取消
  * - 并发变更仅影响后续调度，不中断运行中任务
+ * - 队列从忙碌变为空闲时汇总完成通知
  */
 export class TaskQueue {
   private queue: QueueItem[] = []
@@ -22,6 +25,15 @@ export class TaskQueue {
   private concurrency = 2
   /** 防止 pump 重入造成竞态 */
   private pumping = false
+
+  /** 本批统计（running+queue 从 >0 变为 0 时汇总） */
+  private batchCompleted = 0
+  private batchFailed = 0
+  private batchCancelled = 0
+  /** 本批最近一次完成任务的输出路径（单任务通知用） */
+  private lastCompletedOutput: string | undefined
+  private lastCompletedName: string | undefined
+  private lastFailedError: string | undefined
 
   setWindow(win: BrowserWindow | null): void {
     this.win = win
@@ -38,9 +50,84 @@ export class TaskQueue {
     return this.concurrency
   }
 
+  /** 当前是否有排队或运行中任务 */
+  private hasWork(): boolean {
+    return this.running.size > 0 || this.queue.length > 0
+  }
+
+  private resetBatchStats(): void {
+    this.batchCompleted = 0
+    this.batchFailed = 0
+    this.batchCancelled = 0
+    this.lastCompletedOutput = undefined
+    this.lastCompletedName = undefined
+    this.lastFailedError = undefined
+  }
+
+  /** 全部空闲时按设置发送完成通知 */
+  private maybeNotifyBatchEnd(): void {
+    if (this.hasWork()) return
+
+    const settings = getSettings()
+    if (!settings.notifyOnComplete) {
+      this.resetBatchStats()
+      return
+    }
+
+    const total =
+      this.batchCompleted + this.batchFailed + this.batchCancelled
+    if (total === 0) {
+      this.resetBatchStats()
+      return
+    }
+
+    if (!Notification.isSupported()) {
+      this.resetBatchStats()
+      return
+    }
+
+    let title = '任务完成'
+    let body = ''
+
+    if (total === 1 && this.batchCompleted === 1) {
+      const name = this.lastCompletedName || '文件'
+      title = '处理完成'
+      body = `${name} 已完成`
+    } else if (total === 1 && this.batchFailed === 1) {
+      title = '任务失败'
+      body = this.lastFailedError || '处理失败'
+    } else if (total === 1 && this.batchCancelled === 1) {
+      // 仅取消不弹通知
+      this.resetBatchStats()
+      return
+    } else {
+      const parts: string[] = []
+      if (this.batchCompleted > 0) parts.push(`完成 ${this.batchCompleted} 个`)
+      if (this.batchFailed > 0) parts.push(`失败 ${this.batchFailed} 个`)
+      if (this.batchCancelled > 0) parts.push(`取消 ${this.batchCancelled} 个`)
+      title = '全部任务结束'
+      body = parts.join('，')
+    }
+
+    try {
+      const n = new Notification({ title, body })
+      const out = this.lastCompletedOutput
+      if (out && this.batchCompleted > 0) {
+        n.on('click', () => {
+          shell.showItemInFolder(out)
+        })
+      }
+      n.show()
+    } catch (err) {
+      console.warn('[taskQueue] Notification failed:', err)
+    }
+
+    this.resetBatchStats()
+  }
+
   enqueue(task: CompressTask): void {
-    // 确保输出路径唯一
-    const rawOut = task.outputPath || buildOutputPath(task.inputPath, task.options)
+    // 始终按当前 options 重建输出路径，避免旧模板/模式残留
+    const rawOut = buildOutputPath(task.inputPath, task.options)
     const outputPath = uniqueOutputPath(rawOut)
     // 任务开始前记录输入大小
     const inputSize = task.inputSize ?? getFileSize(task.inputPath)
@@ -74,6 +161,7 @@ export class TaskQueue {
     const idx = this.queue.findIndex((q) => q.task.id === taskId)
     if (idx >= 0) {
       const [item] = this.queue.splice(idx, 1)
+      this.batchCancelled += 1
       const end: TaskEndPayload = {
         taskId: item.task.id,
         status: 'cancelled',
@@ -81,6 +169,7 @@ export class TaskQueue {
         inputSize: item.task.inputSize
       }
       this.send(IpcChannels.TASK_END, end)
+      this.maybeNotifyBatchEnd()
     }
   }
 
@@ -92,6 +181,7 @@ export class TaskQueue {
     // 清空等待队列
     const pending = this.queue.splice(0, this.queue.length)
     for (const item of pending) {
+      this.batchCancelled += 1
       const end: TaskEndPayload = {
         taskId: item.task.id,
         status: 'cancelled',
@@ -99,6 +189,10 @@ export class TaskQueue {
         inputSize: item.task.inputSize
       }
       this.send(IpcChannels.TASK_END, end)
+    }
+    // 若没有运行中任务，立即汇总；否则等 runItem finally
+    if (this.running.size === 0) {
+      this.maybeNotifyBatchEnd()
     }
   }
 
@@ -132,12 +226,15 @@ export class TaskQueue {
     }
 
     try {
-      // 预探测一次，同批任务可复用缓存
+      const isAudio = task.options?.mode === 'audio'
+      // 音频模式不探测硬件
       let detect = null
-      try {
-        detect = await detectHardwareEncoders()
-      } catch {
-        detect = null
+      if (!isAudio) {
+        try {
+          detect = await detectHardwareEncoders()
+        } catch {
+          detect = null
+        }
       }
 
       const result = await runCompress({
@@ -151,33 +248,48 @@ export class TaskQueue {
       })
 
       if (result.code === -1 || signal.cancelled) {
+        this.batchCancelled += 1
         this.send(IpcChannels.TASK_END, {
           taskId: task.id,
           status: 'cancelled',
           error: '已取消',
           inputSize: result.inputSize ?? task.inputSize,
-          resolvedEncoder: result.resolvedEncoder
+          resolvedEncoder: result.resolvedEncoder,
+          fallbackNote: result.fallbackNote,
+          commandLine: result.commandLine
         } satisfies TaskEndPayload)
       } else if (result.code === 0) {
+        this.batchCompleted += 1
+        this.lastCompletedOutput = task.outputPath
+        this.lastCompletedName =
+          task.fileName || path.basename(task.inputPath)
         this.send(IpcChannels.TASK_END, {
           taskId: task.id,
           status: 'completed',
           outputPath: task.outputPath,
           inputSize: result.inputSize ?? task.inputSize,
           outputSize: result.outputSize,
-          resolvedEncoder: result.resolvedEncoder
+          resolvedEncoder: result.resolvedEncoder,
+          fallbackNote: result.fallbackNote,
+          commandLine: result.commandLine
         } satisfies TaskEndPayload)
       } else {
+        this.batchFailed += 1
+        this.lastFailedError = result.error || '处理失败'
         this.send(IpcChannels.TASK_END, {
           taskId: task.id,
           status: 'failed',
           error: result.error || '压缩失败',
           inputSize: result.inputSize ?? task.inputSize,
-          resolvedEncoder: result.resolvedEncoder
+          resolvedEncoder: result.resolvedEncoder,
+          fallbackNote: result.fallbackNote,
+          commandLine: result.commandLine
         } satisfies TaskEndPayload)
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      this.batchFailed += 1
+      this.lastFailedError = msg
       this.send(IpcChannels.TASK_END, {
         taskId: task.id,
         status: 'failed',
@@ -186,6 +298,7 @@ export class TaskQueue {
       } satisfies TaskEndPayload)
     } finally {
       this.running.delete(task.id)
+      this.maybeNotifyBatchEnd()
       void this.pump()
     }
   }

@@ -18,6 +18,8 @@
   "include": [
     "electron.vite.config.ts",
     "electron/**/*",
-    "shared/**/*"
+    "shared/**/*",
+    "vitest.config.ts",
+    "tests/**/*"
   ]
 }

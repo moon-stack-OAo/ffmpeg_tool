@@ -16,13 +16,21 @@ publish:
   owner: moon-stack-OAo
   repo: ffmpeg_tool
   releaseType: release
+# 品牌图标：build/icon.ico（Win）/ build/icon.png（通用源）
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
         - x64
   artifactName: ${productName}-${version}-win-${arch}.${ext}
+  # 代码签名占位（有证书时再启用，勿在无证书 CI 强制签名）
+  # sign: path/to/sign-tool-or-custom-script
+  # certificateFile: path/to/cert.pfx
+  # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
+  # signingHashAlgorithms: [sha256]
 mac:
+  icon: build/icon.png
   target:
     - target: dmg
       arch:
@@ -30,10 +38,18 @@ mac:
         - arm64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.video
+  # 签名/公证占位（有 Apple Developer 证书时再配置；无证书时保持不强制）
+  # identity: "Developer ID Application: Your Name (TEAMID)"
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: FFmpeg视频压缩工具
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   # 便于 electron-updater 差分/覆盖安装
   differentialPackage: true

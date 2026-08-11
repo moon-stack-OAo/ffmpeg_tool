@@ -33,12 +33,18 @@ win:
   # signingHashAlgorithms: [sha256]
 mac:
   icon: build/icon.png
+  # 与 Windows 一致使用 ASCII 产物名，避免中文路径问题
+  executableName: ffmpeg-tool
   target:
     - target: dmg
       arch:
         - x64
         - arm64
-  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: ffmpeg-tool-${version}-mac-${arch}.${ext}
   category: public.app-category.video
   # 签名/公证占位（有 Apple Developer 证书时再配置；无证书时保持不强制）
   # identity: "Developer ID Application: Your Name (TEAMID)"

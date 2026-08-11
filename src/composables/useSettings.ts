@@ -5,6 +5,7 @@ import {
   DEFAULT_AUDIO_BITRATE,
   DEFAULT_AUDIO_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
+  type AppSettings,
   type AudioFormat,
   type CompressOptions,
   DEFAULT_PRESETS,
@@ -42,6 +43,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const persistTasks = ref(true)
   /** 主题：light | dark | system */
   const theme = ref<ThemeMode>('system')
+  /** 自定义 ffmpeg bin 目录（含 ffmpeg 与 ffprobe），空串=自动探测 */
+  const ffmpegBinDir = ref('')
   /** 裁剪开始秒，0 表示不裁剪（任务级，不持久化到 settings） */
   const trimStart = ref(0)
   /** 裁剪结束秒，0 表示到结尾 */
@@ -180,47 +183,69 @@ export function useSettings(options: UseSettingsOptions = {}) {
     void window.electronAPI.setSettings(partial)
   }
 
+  /** 用一份设置快照覆盖全部 ref（loadSettings / 重置后复用） */
+  function applyLoadedSettings(s: AppSettings): void {
+    outputDir.value = s.outputDir || ''
+    presetId.value = s.presetId || 'standard'
+    encoder.value = s.encoder || 'auto'
+    concurrency.value = s.concurrency || 2
+    custom.crf = s.customCrf ?? 23
+    custom.maxEdge = s.customMaxEdge ?? 0
+    custom.format = s.customFormat || 'mp4'
+    nameTemplate.value = s.nameTemplate || DEFAULT_NAME_TEMPLATE
+    // 若模板不在预设列表中，视为自定义
+    const presets = [
+      '{name}_compressed',
+      '{name}_audio',
+      '{name}_{preset}',
+      '{name}_{date}'
+    ]
+    nameTemplateCustom.value = !presets.includes(nameTemplate.value)
+    outputDirMode.value =
+      s.outputDirMode === 'sidecar' || s.outputDirMode === 'dated'
+        ? s.outputDirMode
+        : 'fixed'
+    targetSizeMb.value =
+      typeof s.targetSizeMb === 'number' && Number.isFinite(s.targetSizeMb)
+        ? Math.max(0, s.targetSizeMb)
+        : 0
+    twoPass.value = typeof s.twoPass === 'boolean' ? s.twoPass : true
+    taskMode.value = s.taskMode === 'audio' ? 'audio' : 'compress'
+    audioFormat.value = s.audioFormat || 'm4a'
+    audioBitrate.value = s.audioBitrate || DEFAULT_AUDIO_BITRATE
+    notifyOnComplete.value =
+      typeof s.notifyOnComplete === 'boolean' ? s.notifyOnComplete : true
+    persistTasks.value =
+      typeof s.persistTasks === 'boolean' ? s.persistTasks : true
+    theme.value =
+      s.theme === 'light' || s.theme === 'dark' || s.theme === 'system'
+        ? s.theme
+        : 'system'
+    ffmpegBinDir.value =
+      typeof s.ffmpegBinDir === 'string' ? s.ffmpegBinDir : ''
+  }
+
   async function loadSettings(): Promise<void> {
     try {
       const s = await window.electronAPI.getSettings()
-      outputDir.value = s.outputDir || ''
-      presetId.value = s.presetId || 'standard'
-      encoder.value = s.encoder || 'auto'
-      concurrency.value = s.concurrency || 2
-      custom.crf = s.customCrf ?? 23
-      custom.maxEdge = s.customMaxEdge ?? 0
-      custom.format = s.customFormat || 'mp4'
-      nameTemplate.value = s.nameTemplate || DEFAULT_NAME_TEMPLATE
-      // 若模板不在预设列表中，视为自定义
-      const presets = [
-        '{name}_compressed',
-        '{name}_audio',
-        '{name}_{preset}',
-        '{name}_{date}'
-      ]
-      nameTemplateCustom.value = !presets.includes(nameTemplate.value)
-      outputDirMode.value =
-        s.outputDirMode === 'sidecar' || s.outputDirMode === 'dated'
-          ? s.outputDirMode
-          : 'fixed'
-      targetSizeMb.value =
-        typeof s.targetSizeMb === 'number' && Number.isFinite(s.targetSizeMb)
-          ? Math.max(0, s.targetSizeMb)
-          : 0
-      twoPass.value = typeof s.twoPass === 'boolean' ? s.twoPass : true
-      taskMode.value = s.taskMode === 'audio' ? 'audio' : 'compress'
-      audioFormat.value = s.audioFormat || 'm4a'
-      audioBitrate.value = s.audioBitrate || DEFAULT_AUDIO_BITRATE
-      notifyOnComplete.value =
-        typeof s.notifyOnComplete === 'boolean' ? s.notifyOnComplete : true
-      persistTasks.value =
-        typeof s.persistTasks === 'boolean' ? s.persistTasks : true
-      theme.value =
-        s.theme === 'light' || s.theme === 'dark' || s.theme === 'system'
-          ? s.theme
-          : 'system'
+      applyLoadedSettings(s)
     } catch {
       // 使用默认值
+    }
+  }
+
+  /** 设置自定义 ffmpeg bin 目录；空串=清除覆盖（成功时同步本地 ref） */
+  async function onSetFfmpegBinDir(dir: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await window.electronAPI.setFfmpegBinDir(dir)
+      if (res.ok) {
+        ffmpegBinDir.value = (dir || '').trim()
+        return { ok: true }
+      }
+      return { ok: false, error: res.error }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: message }
     }
   }
 
@@ -418,6 +443,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     notifyOnComplete,
     persistTasks,
     theme,
+    ffmpegBinDir,
     trimStart,
     trimEnd,
     custom,
@@ -427,6 +453,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     isAudioMode,
     buildOptions,
     loadSettings,
+    applyLoadedSettings,
+    onSetFfmpegBinDir,
     persist,
     persistNow,
     onPresetChange,

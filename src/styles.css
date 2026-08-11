@@ -81,12 +81,13 @@ body,
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 12px;
   align-items: center;
   background: var(--panel-bg);
   border-radius: 8px;
   padding: 12px 14px;
   box-shadow: var(--panel-shadow);
+  row-gap: 10px;
 }
 
 .toolbar .label {
@@ -205,7 +206,7 @@ body,
 .path-text {
   font-size: 13px;
   color: var(--app-fg-secondary);
-  max-width: 420px;
+  max-width: min(420px, 36vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

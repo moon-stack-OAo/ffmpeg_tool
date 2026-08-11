@@ -3,7 +3,8 @@ import { app } from 'electron'
 export {
   getFfmpegPath,
   getFfprobePath,
-  checkFfmpegAvailable
+  checkFfmpegAvailable,
+  setBinaryOverride
 } from './bin'
 
 export {

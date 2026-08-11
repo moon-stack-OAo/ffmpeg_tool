@@ -280,6 +280,18 @@ export interface AppSettings {
   persistTasks: boolean
   /** 主题：light | dark | system（跟随系统），默认 system */
   theme: ThemeMode
+  /** 自定义 ffmpeg bin 目录（含 ffmpeg 与 ffprobe），空串=自动探测 */
+  ffmpegBinDir: string
+}
+
+/** 应用信息（设置抽屉「关于」展示） */
+export interface AppInfo {
+  version: string
+  packaged: boolean
+  electron: string
+  chrome: string
+  node: string
+  userDataPath: string
 }
 
 /** IPC 通道名（主进程 ↔ 渲染进程） */
@@ -297,6 +309,13 @@ export const IpcChannels = {
   GET_CONCURRENCY: 'task:get-concurrency',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
+  SETTINGS_RESET: 'settings:reset',
+  /** 设置自定义 ffmpeg bin 目录（空串=清除覆盖） */
+  FFMPEG_SET_BIN_DIR: 'ffmpeg:set-bin-dir',
+  /** 清空已持久化任务 */
+  TASKS_CLEAR: 'tasks:clear',
+  /** 应用信息（设置抽屉「关于」） */
+  APP_INFO: 'app:info',
   /** 加载持久化任务列表 */
   TASKS_GET: 'tasks:get',
   /** 保存任务列表 */
@@ -309,6 +328,10 @@ export const IpcChannels = {
   OPEN_PATH: 'shell:open-path',
   /** 在资源管理器中显示 */
   SHOW_ITEM_IN_FOLDER: 'shell:show-item',
+  /** 修改用户数据目录（需重启生效） */
+  SET_DATA_DIR: 'app:set-data-dir',
+  /** 重启应用 */
+  RELAUNCH_APP: 'app:relaunch',
   /** preload → 主进程：拖拽解析后的文件列表 */
   FILES_DROPPED_FROM_PRELOAD: 'files:dropped-from-preload',
   // 主 → 渲染
@@ -509,6 +532,17 @@ export interface ElectronAPI {
   getConcurrency: () => Promise<ConcurrencyResult>
   getSettings: () => Promise<AppSettings>
   setSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>
+  /**
+   * 设置自定义 ffmpeg bin 目录（须同时含 ffmpeg 与 ffprobe）
+   * 空串 dir = 清除覆盖，回退自动探测（ffmpeg-static）
+   */
+  setFfmpegBinDir: (dir: string) => Promise<{ ok: boolean; error?: string }>
+  /** 清空已持久化的任务列表 */
+  clearStoredTasks: () => Promise<{ ok: boolean; error?: string }>
+  /** 重置全部设置为默认值，返回重置后的设置 */
+  resetSettings: () => Promise<AppSettings>
+  /** 获取应用信息（版本 / 运行时 / userData 路径） */
+  getAppInfo: () => Promise<AppInfo>
   /** 加载可恢复的任务列表 */
   loadTasks: () => Promise<CompressTask[]>
   /** 持久化任务列表（防抖由渲染侧负责） */
@@ -521,6 +555,10 @@ export interface ElectronAPI {
   openPath: (p: string) => Promise<{ ok: boolean; error?: string }>
   /** 在资源管理器中显示并选中 */
   showItemInFolder: (p: string) => Promise<{ ok: boolean }>
+  /** 修改用户数据目录；restart=true 表示需重启生效 */
+  setDataDir: (dir: string) => Promise<{ ok: boolean; error?: string; restart?: boolean }>
+  /** 重启应用（用于数据目录等更改生效） */
+  relaunchApp: () => Promise<void>
   /**
    * 订阅拖拽文件（preload 解析路径 → 主进程 → 渲染进程）
    */

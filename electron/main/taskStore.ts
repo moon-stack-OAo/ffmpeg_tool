@@ -74,6 +74,23 @@ export function saveTasks(
   }
 }
 
+/**
+ * 删除 userData/tasks.json（文件不存在也视为成功）
+ */
+export function clearStoredTasks(): { ok: boolean; error?: string } {
+  try {
+    const file = tasksFilePath()
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file)
+    }
+    return { ok: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[taskStore] clearStoredTasks failed:', err)
+    return { ok: false, error: msg }
+  }
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === 'object' && !Array.isArray(v)
 }

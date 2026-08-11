@@ -227,6 +227,11 @@ const api: ElectronAPI = {
   getSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_GET),
   setSettings: (partial: Partial<AppSettings>) =>
     ipcRenderer.invoke(IpcChannels.SETTINGS_SET, partial),
+  setFfmpegBinDir: (dir: string) =>
+    ipcRenderer.invoke(IpcChannels.FFMPEG_SET_BIN_DIR, dir),
+  clearStoredTasks: () => ipcRenderer.invoke(IpcChannels.TASKS_CLEAR),
+  resetSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_RESET),
+  getAppInfo: () => ipcRenderer.invoke(IpcChannels.APP_INFO),
   loadTasks: () => ipcRenderer.invoke(IpcChannels.TASKS_GET),
   saveTasks: (tasks: CompressTask[]) =>
     ipcRenderer.invoke(IpcChannels.TASKS_SAVE, tasks),
@@ -237,6 +242,8 @@ const api: ElectronAPI = {
   openPath: (p: string) => ipcRenderer.invoke(IpcChannels.OPEN_PATH, p),
   showItemInFolder: (p: string) =>
     ipcRenderer.invoke(IpcChannels.SHOW_ITEM_IN_FOLDER, p),
+  setDataDir: (dir: string) => ipcRenderer.invoke(IpcChannels.SET_DATA_DIR, dir),
+  relaunchApp: () => ipcRenderer.invoke(IpcChannels.RELAUNCH_APP),
 
   onFilesDropped: (callback) => {
     const handler = (

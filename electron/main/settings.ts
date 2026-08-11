@@ -33,7 +33,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   audioBitrate: DEFAULT_AUDIO_BITRATE,
   notifyOnComplete: true,
   persistTasks: true,
-  theme: 'system'
+  theme: 'system',
+  ffmpegBinDir: ''
 }
 
 let cached: AppSettings | null = null
@@ -110,7 +111,9 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
       typeof src.persistTasks === 'boolean'
         ? src.persistTasks
         : DEFAULT_SETTINGS.persistTasks,
-    theme: normalizeTheme(src.theme)
+    theme: normalizeTheme(src.theme),
+    ffmpegBinDir:
+      typeof src.ffmpegBinDir === 'string' ? src.ffmpegBinDir.trim() : ''
   }
 }
 
@@ -155,6 +158,20 @@ export function saveSettings(partial: Partial<AppSettings>): AppSettings {
 export function getSettings(): AppSettings {
   if (cached) return cached
   return loadSettings()
+}
+
+/** 重置全部设置为默认值：清空内存缓存并删除磁盘文件，返回默认设置 */
+export function resetSettings(): AppSettings {
+  cached = { ...DEFAULT_SETTINGS }
+  try {
+    const file = settingsPath()
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file)
+    }
+  } catch (err) {
+    console.warn('[settings] resetSettings failed:', err)
+  }
+  return cached
 }
 
 export { DEFAULT_SETTINGS }

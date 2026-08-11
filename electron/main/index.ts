@@ -3,12 +3,16 @@ import {basename, extname, join} from 'path'
 import {existsSync} from 'fs'
 import type {AppSettings, CompressTask} from '../../shared/types'
 import {IpcChannels, VIDEO_EXTENSIONS} from '../../shared/types'
-import {checkFfmpegAvailable, detectHardwareEncoders} from './ffmpeg'
+import {checkFfmpegAvailable, detectHardwareEncoders, setBinaryOverride} from './ffmpeg'
 import {collectVideoFiles} from './mediaScan'
-import {getSettings, loadSettings, saveSettings} from './settings'
-import {loadTasks, saveTasks} from './taskStore'
+import {getSettings, loadSettings, resetSettings, saveSettings} from './settings'
+import {clearStoredTasks, loadTasks, saveTasks} from './taskStore'
+import {applyUserDataOverride, setUserDataDir} from './dataDir'
 import {taskQueue} from './taskQueue'
 import {initAutoUpdater, registerUpdaterIpc} from './updater'
+
+// 在读取 userData 之前应用自定义数据目录（须早于 whenReady 中的 loadSettings）
+applyUserDataOverride()
 
 function isDev(): boolean {
   return !app.isPackaged
@@ -165,11 +169,65 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IpcChannels.SETTINGS_SET, async (_e, partial: Partial<AppSettings>) => {
-    const next = saveSettings(partial || {})
-    if (partial && typeof partial.concurrency === 'number') {
+    // ffmpeg bin 目录需主进程校验；无效则回退不保存（避免把无效目录写盘）
+    const part = { ...(partial || {}) }
+    if (typeof part.ffmpegBinDir === 'string') {
+      const override = setBinaryOverride(part.ffmpegBinDir)
+      if (!override.accepted) {
+        delete part.ffmpegBinDir
+      }
+    }
+    const next = saveSettings(part)
+    if (typeof part.concurrency === 'number') {
       taskQueue.setConcurrency(next.concurrency)
     }
     return next
+  })
+
+  // 重置全部设置为默认（删除设置文件、清除 ffmpeg 目录覆盖）
+  ipcMain.handle(IpcChannels.SETTINGS_RESET, async () => {
+    const next = resetSettings()
+    setBinaryOverride('')
+    return next
+  })
+
+  // 自定义 ffmpeg bin 目录（空串=清除覆盖）
+  ipcMain.handle(IpcChannels.FFMPEG_SET_BIN_DIR, async (_e, dir: string) => {
+    const value = typeof dir === 'string' ? dir.trim() : ''
+    const override = setBinaryOverride(value)
+    if (!override.accepted) {
+      return { ok: false, error: override.error }
+    }
+    saveSettings({ ffmpegBinDir: value })
+    return { ok: true }
+  })
+
+  // 清空已持久化任务
+  ipcMain.handle(IpcChannels.TASKS_CLEAR, async () => {
+    return clearStoredTasks()
+  })
+
+  // 应用信息（「设置」抽屉「关于」）
+  ipcMain.handle(IpcChannels.APP_INFO, async () => {
+    return {
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      electron: process.versions.electron ?? '',
+      chrome: process.versions.chrome ?? '',
+      node: process.versions.node ?? '',
+      userDataPath: app.getPath('userData')
+    }
+  })
+
+  // 修改数据目录
+  ipcMain.handle(IpcChannels.SET_DATA_DIR, async (_e, dir: string) => {
+    return setUserDataDir(typeof dir === 'string' ? dir : '')
+  })
+
+  // 重启应用（数据目录等变更后生效）
+  ipcMain.handle(IpcChannels.RELAUNCH_APP, async () => {
+    app.relaunch()
+    app.exit(0)
   })
 
   // 任务列表持久化：读
@@ -343,6 +401,8 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   app.setAppUserModelId('com.ffmpeg.tool')
   const settings = loadSettings()
+  // 启动即应用用户自定义 ffmpeg bin 目录（无效时回退自动探测）
+  setBinaryOverride(settings.ffmpegBinDir)
   taskQueue.setConcurrency(settings.concurrency)
   registerIpc()
   registerUpdaterIpc()

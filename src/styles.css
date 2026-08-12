@@ -116,7 +116,7 @@ body,
   border: 1.5px dashed var(--border-dashed);
   border-radius: var(--radius-md);
   background: var(--panel-bg);
-  padding: 22px 16px;
+  padding: 36px 20px 32px;
   text-align: center;
   color: var(--app-fg-muted);
   cursor: pointer;
@@ -130,7 +130,7 @@ body,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .drop-zone.compact {
@@ -147,6 +147,10 @@ body,
 
 .drop-zone.compact .hint {
   margin-top: 0;
+}
+
+.drop-zone.compact .drop-steps {
+  display: none;
 }
 
 .drop-zone.active {
@@ -168,9 +172,47 @@ body,
 }
 
 .drop-zone .drop-title {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   color: inherit;
+}
+
+.drop-zone.compact .drop-title {
+  font-weight: 500;
+}
+
+.drop-zone .drop-steps {
+  list-style: none;
+  margin: 4px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  font-size: 13px;
+  color: var(--app-fg-secondary);
+}
+
+.drop-zone .drop-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drop-zone .drop-steps .step-num {
+  color: var(--app-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.drop-zone:hover .drop-steps,
+.drop-zone.active .drop-steps {
+  color: inherit;
+}
+
+.drop-zone:hover .drop-steps .step-num,
+.drop-zone.active .drop-steps .step-num {
+  color: inherit;
+  opacity: 0.85;
 }
 
 .drop-zone .hint {
@@ -268,10 +310,22 @@ body,
 .path-text {
   font-size: 13px;
   color: var(--app-fg-secondary);
-  max-width: min(360px, 32vw);
+  max-width: min(260px, 28vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .path-text {
+    max-width: min(160px, 22vw);
+  }
+}
+
+@media (max-width: 720px) {
+  .path-text {
+    max-width: min(120px, 18vw);
+  }
 }
 
 .err-text {

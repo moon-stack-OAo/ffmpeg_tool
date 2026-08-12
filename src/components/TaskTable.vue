@@ -44,6 +44,12 @@ async function copyCommand(): Promise<void> {
     // ignore
   }
 }
+
+function onActionCommand(cmd: string, row: CompressTask): void {
+  if (cmd === 'folder') emit('showInFolder', row)
+  else if (cmd === 'detail') openDetail(row)
+  else if (cmd === 'remove') emit('removeOne', row.id)
+}
 </script>
 
 <template>
@@ -133,40 +139,59 @@ async function copyCommand(): Promise<void> {
           <span v-else class="meta-muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column fixed="right" label="操作" width="250">
+      <el-table-column fixed="right" label="操作" width="130" class-name="task-actions-col">
         <template #default="{ row }">
-          <el-button
-            v-if="
-              row.status === 'pending' ||
-              row.status === 'failed' ||
-              row.status === 'cancelled'
-            "
-            link
-            size="small"
-            type="primary"
-            @click="emit('startOne', row)"
-          >
-            开始
-          </el-button>
-          <el-button
-            v-if="row.status === 'running' || row.status === 'queued'"
-            link
-            size="small"
-            type="warning"
-            @click="emit('cancelOne', row.id)"
-          >
-            取消
-          </el-button>
-          <template v-if="row.status === 'completed' && row.outputPath">
-            <el-button link size="small" type="primary" @click="emit('openOutput', row)">
+          <div class="task-actions">
+            <el-button
+              v-if="
+                row.status === 'pending' ||
+                row.status === 'failed' ||
+                row.status === 'cancelled'
+              "
+              link
+              size="small"
+              type="primary"
+              @click="emit('startOne', row)"
+            >
+              开始
+            </el-button>
+            <el-button
+              v-else-if="row.status === 'running' || row.status === 'queued'"
+              link
+              size="small"
+              type="warning"
+              @click="emit('cancelOne', row.id)"
+            >
+              取消
+            </el-button>
+            <el-button
+              v-else-if="row.status === 'completed' && row.outputPath"
+              link
+              size="small"
+              type="primary"
+              @click="emit('openOutput', row)"
+            >
               打开
             </el-button>
-            <el-button link size="small" @click="emit('showInFolder', row)">文件夹</el-button>
-          </template>
-          <el-button link size="small" @click="openDetail(row)">详情</el-button>
-          <el-button link size="small" type="danger" @click="emit('removeOne', row.id)">
-            移除
-          </el-button>
+
+            <el-dropdown trigger="click" @command="(cmd: string) => onActionCommand(cmd, row)">
+              <el-button link size="small">更多</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-if="row.status === 'completed' && row.outputPath"
+                    command="folder"
+                  >
+                    文件夹
+                  </el-dropdown-item>
+                  <el-dropdown-item command="detail">详情</el-dropdown-item>
+                  <el-dropdown-item command="remove" divided>
+                    <span class="action-danger">移除</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -294,5 +319,16 @@ async function copyCommand(): Promise<void> {
 .detail-pre.err {
   color: var(--status-bad);
   background: color-mix(in srgb, var(--status-bad) 12%, transparent);
+}
+
+.task-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+.action-danger {
+  color: var(--status-bad);
 }
 </style>

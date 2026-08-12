@@ -18,14 +18,27 @@ const emit = defineEmits<{
     class="drop-zone"
     @click="emit('click')"
   >
-    <el-icon class="drop-icon" :size="compact ? 22 : 32">
+    <el-icon class="drop-icon" :size="compact ? 22 : 40">
       <UploadFilled />
     </el-icon>
-    <div class="drop-title">
-      {{ compact ? '点击或拖拽继续添加视频' : '点击或拖拽添加视频文件' }}
-    </div>
-    <div class="hint">
-      支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置
-    </div>
+
+    <template v-if="compact">
+      <div class="drop-title">点击或拖拽继续添加视频</div>
+      <div class="hint">
+        支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="drop-title">添加视频开始处理</div>
+      <ol class="drop-steps">
+        <li><span class="step-num">①</span>添加视频</li>
+        <li><span class="step-num">②</span>确认选项 / 输出</li>
+        <li><span class="step-num">③</span>全部开始</li>
+      </ol>
+      <div class="hint">
+        支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置
+      </div>
+    </template>
   </div>
 </template>

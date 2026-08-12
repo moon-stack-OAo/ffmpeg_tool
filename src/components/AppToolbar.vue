@@ -132,8 +132,33 @@ const emit = defineEmits<{
 .path-text {
   min-width: 0;
   flex: 0 1 260px;
+  max-width: min(260px, 28vw);
   padding: 4px 8px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--app-fg) 4%, transparent);
+}
+
+@media (max-width: 900px) {
+  .path-text {
+    flex-basis: 160px;
+    max-width: min(160px, 22vw);
+  }
+}
+
+@media (max-width: 720px) {
+  .path-text {
+    flex-basis: 120px;
+    max-width: min(120px, 18vw);
+  }
+
+  .toolbar-meta {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>

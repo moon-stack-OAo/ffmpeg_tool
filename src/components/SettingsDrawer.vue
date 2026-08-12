@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
 import type { AppInfo, FfmpegStatus, ThemeMode } from '@shared/types'
@@ -37,6 +38,15 @@ const emit = defineEmits<{
   resetSettings: []
   checkUpdate: []
 }>()
+
+const activeTab = ref('general')
+
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) activeTab.value = 'general'
+  }
+)
 
 async function confirmClearTasks(): Promise<void> {
   try {
@@ -95,203 +105,243 @@ function onPathKeydown(e: KeyboardEvent): void {
   <el-drawer
     :model-value="visible"
     class="settings-drawer"
-    size="420px"
+    size="35%"
     title="设置"
     append-to-body
     @update:model-value="(v: boolean) => emit('update:visible', v)"
   >
-    <div class="drawer-body">
-      <!-- 通用 -->
-      <div class="setting-group">
-        <div class="group-title">通用</div>
-        <div class="setting-row">
-          <span class="setting-label">主题</span>
-          <el-select
-            :model-value="theme"
-            size="small"
-            class="w-xl"
-            @change="(v: ThemeMode) => emit('themeChange', v)"
-          >
-            <el-option
-              v-for="opt in THEME_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
+    <el-tabs v-model="activeTab" class="settings-tabs">
+      <el-tab-pane label="通用" name="general" lazy>
+        <div class="setting-pane">
+          <div class="setting-row">
+            <span class="setting-label">主题</span>
+            <el-select
+              :model-value="theme"
+              size="small"
+              class="w-xl"
+              @change="(v: ThemeMode) => emit('themeChange', v)"
+            >
+              <el-option
+                v-for="opt in THEME_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">并发数</span>
+            <el-select
+              :model-value="concurrency"
+              size="small"
+              class="w-sm"
+              :title="CONCURRENCY_HINT"
+              @change="(v: number) => emit('concurrencyChange', v)"
+            >
+              <el-option
+                v-for="n in CONCURRENCY_OPTIONS"
+                :key="n"
+                :label="String(n)"
+                :value="n"
+              />
+            </el-select>
+            <span class="setting-hint" :title="CONCURRENCY_HINT">
+              {{ CONCURRENCY_HINT }}
+            </span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">完成后通知</span>
+            <el-switch
+              :model-value="notifyOnComplete"
+              size="small"
+              @change="(v: string | number | boolean) => emit('notifyOnCompleteChange', Boolean(v))"
             />
-          </el-select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">并发数</span>
-          <el-select
-            :model-value="concurrency"
-            size="small"
-            class="w-sm"
-            :title="CONCURRENCY_HINT"
-            @change="(v: number) => emit('concurrencyChange', v)"
-          >
-            <el-option
-              v-for="n in CONCURRENCY_OPTIONS"
-              :key="n"
-              :label="String(n)"
-              :value="n"
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">持久化任务</span>
+            <el-switch
+              :model-value="persistTasks"
+              size="small"
+              @change="(v: string | number | boolean) => emit('persistTasksChange', Boolean(v))"
             />
-          </el-select>
-          <span class="setting-hint" :title="CONCURRENCY_HINT">
-            {{ CONCURRENCY_HINT }}
-          </span>
+          </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">完成后通知</span>
-          <el-switch
-            :model-value="notifyOnComplete"
-            size="small"
-            @change="(v: string | number | boolean) => emit('notifyOnCompleteChange', Boolean(v))"
-          />
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">持久化任务</span>
-          <el-switch
-            :model-value="persistTasks"
-            size="small"
-            @change="(v: string | number | boolean) => emit('persistTasksChange', Boolean(v))"
-          />
-        </div>
-      </div>
+      </el-tab-pane>
 
-      <!-- 编码环境 -->
-      <div class="setting-group">
-        <div class="group-title">编码环境</div>
-        <div class="setting-row">
-          <span class="setting-label">FFmpeg 状态</span>
-          <el-tag
-            :type="ffmpegStatus?.ready ? 'success' : 'danger'"
-            effect="plain"
-            size="small"
-          >
-            {{ ffmpegStatus?.ready ? '就绪' : '未就绪' }}
-          </el-tag>
+      <el-tab-pane label="编码" name="ffmpeg" lazy>
+        <div class="setting-pane">
+          <div class="setting-row">
+            <span class="setting-label">FFmpeg 状态</span>
+            <el-tag
+              :type="ffmpegStatus?.ready ? 'success' : 'danger'"
+              effect="plain"
+              size="small"
+            >
+              {{ ffmpegStatus?.ready ? '就绪' : '未就绪' }}
+            </el-tag>
+          </div>
+          <div v-if="ffmpegStatus && !ffmpegStatus.ready && ffmpegStatus.error" class="setting-row">
+            <span class="setting-label" />
+            <span class="setting-error">{{ ffmpegStatus.error }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">ffmpeg</span>
+            <span class="setting-value" :title="ffmpegStatus?.ffmpegPath || '内置自动探测'">
+              {{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}
+            </span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">ffprobe</span>
+            <span class="setting-value" :title="ffmpegStatus?.ffprobePath || '内置自动探测'">
+              {{ ffmpegStatus?.ffprobePath || '内置自动探测' }}
+            </span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">自定义 bin 目录</span>
+            <el-input
+              :model-value="ffmpegBinDir"
+              class="bin-dir-input"
+              placeholder="留空=自动探测（ffmpeg-static）"
+              readonly
+              size="small"
+            />
+          </div>
+          <div class="setting-row actions">
+            <el-button :icon="Folder" size="small" @click="emit('browseFfmpegDir')">
+              浏览
+            </el-button>
+            <el-button size="small" @click="emit('clearFfmpegBinDir')">
+              重置自动
+            </el-button>
+            <el-button size="small" @click="emit('reDetectFfmpeg')">
+              重新检测
+            </el-button>
+          </div>
         </div>
-        <div v-if="ffmpegStatus && !ffmpegStatus.ready && ffmpegStatus.error" class="setting-row">
-          <span class="setting-label" />
-          <span class="setting-error">{{ ffmpegStatus.error }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">ffmpeg</span>
-          <span class="setting-value" :title="ffmpegStatus?.ffmpegPath || '内置自动探测'">
-            {{ ffmpegStatus?.ffmpegPath || '内置自动探测' }}
-          </span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">ffprobe</span>
-          <span class="setting-value" :title="ffmpegStatus?.ffprobePath || '内置自动探测'">
-            {{ ffmpegStatus?.ffprobePath || '内置自动探测' }}
-          </span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">自定义 bin 目录</span>
-          <el-input
-            :model-value="ffmpegBinDir"
-            class="bin-dir-input"
-            placeholder="留空=自动探测（ffmpeg-static）"
-            readonly
-            size="small"
-          />
-        </div>
-        <div class="setting-row actions">
-          <el-button :icon="Folder" size="small" @click="emit('browseFfmpegDir')">
-            浏览
-          </el-button>
-          <el-button size="small" @click="emit('clearFfmpegBinDir')">
-            重置自动
-          </el-button>
-          <el-button size="small" @click="emit('reDetectFfmpeg')">
-            重新检测
-          </el-button>
-        </div>
-      </div>
+      </el-tab-pane>
 
-      <!-- 数据 -->
-      <div class="setting-group">
-        <div class="group-title">数据</div>
-        <div class="setting-row">
-          <span class="setting-label">数据目录</span>
-          <button
-            type="button"
-            class="setting-value path-copy-btn"
-            :title="appInfo?.userDataPath ? '点击复制' : ''"
-            :disabled="!appInfo?.userDataPath"
-            @click="copyUserDataPath"
-            @keydown="onPathKeydown"
-          >
-            {{ appInfo?.userDataPath || '—' }}
-          </button>
+      <el-tab-pane label="数据" name="data" lazy>
+        <div class="setting-pane">
+          <div class="setting-row">
+            <span class="setting-label">数据目录</span>
+            <button
+              type="button"
+              class="setting-value path-copy-btn"
+              :title="appInfo?.userDataPath ? '点击复制' : ''"
+              :disabled="!appInfo?.userDataPath"
+              @click="copyUserDataPath"
+              @keydown="onPathKeydown"
+            >
+              {{ appInfo?.userDataPath || '—' }}
+            </button>
+          </div>
+          <div class="setting-row actions">
+            <el-button size="small" @click="emit('openAppData')">打开数据目录</el-button>
+            <el-button size="small" @click="emit('changeDataDir')">修改数据目录…</el-button>
+          </div>
+          <div class="setting-divider" />
+          <div class="setting-row actions">
+            <el-button size="small" plain type="danger" @click="confirmClearTasks">
+              清空已持久化任务
+            </el-button>
+            <el-button size="small" type="danger" @click="confirmReset">
+              重置全部设置
+            </el-button>
+          </div>
         </div>
-        <div class="setting-row actions">
-          <el-button size="small" @click="emit('openAppData')">打开数据目录</el-button>
-          <el-button size="small" @click="emit('changeDataDir')">修改数据目录…</el-button>
-          <el-button size="small" plain type="danger" @click="confirmClearTasks">
-            清空已持久化任务
-          </el-button>
-          <el-button size="small" type="danger" @click="confirmReset">
-            重置全部设置
-          </el-button>
-        </div>
-      </div>
+      </el-tab-pane>
 
-      <!-- 关于 -->
-      <div class="setting-group">
-        <div class="group-title">关于</div>
-        <div class="setting-row">
-          <span class="setting-label">版本</span>
-          <span class="setting-value">v{{ appVersion }}</span>
+      <el-tab-pane label="关于" name="about" lazy>
+        <div class="setting-pane">
+          <div class="setting-row">
+            <span class="setting-label">版本</span>
+            <span class="setting-value">v{{ appVersion }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">打包状态</span>
+            <el-tag :type="isPackaged ? 'success' : 'info'" effect="plain" size="small">
+              {{ isPackaged ? '已打包' : '开发态' }}
+            </el-tag>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Electron</span>
+            <span class="setting-value">{{ appInfo?.electron ?? '—' }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Chrome</span>
+            <span class="setting-value">{{ appInfo?.chrome ?? '—' }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Node</span>
+            <span class="setting-value">{{ appInfo?.node ?? '—' }}</span>
+          </div>
+          <div class="setting-row actions">
+            <el-button :loading="updateChecking" size="small" type="primary" @click="emit('checkUpdate')">
+              检查更新
+            </el-button>
+          </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">打包状态</span>
-          <el-tag :type="isPackaged ? 'success' : 'info'" effect="plain" size="small">
-            {{ isPackaged ? '已打包' : '开发态' }}
-          </el-tag>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">Electron</span>
-          <span class="setting-value">{{ appInfo?.electron ?? '—' }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">Chrome</span>
-          <span class="setting-value">{{ appInfo?.chrome ?? '—' }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">Node</span>
-          <span class="setting-value">{{ appInfo?.node ?? '—' }}</span>
-        </div>
-        <div class="setting-row actions">
-          <el-button :loading="updateChecking" size="small" @click="emit('checkUpdate')">
-            检查更新
-          </el-button>
-        </div>
-      </div>
-    </div>
+      </el-tab-pane>
+    </el-tabs>
   </el-drawer>
 </template>
 
 <style scoped>
-.drawer-body {
+.settings-tabs {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  min-height: 0;
 }
 
-.setting-group {
+.settings-tabs :deep(.el-tabs__header) {
+  margin: 0 0 var(--space-3);
+  flex-shrink: 0;
+}
+
+.settings-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background-color: var(--panel-border);
+}
+
+.settings-tabs :deep(.el-tabs__item) {
+  font-size: var(--fs-md);
+  height: 36px;
+  line-height: 36px;
+  padding: 0 14px;
+  color: var(--app-fg-secondary);
+}
+
+.settings-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.settings-tabs :deep(.el-tabs__active-bar) {
+  background-color: var(--primary);
+}
+
+.settings-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.settings-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.setting-pane {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding-bottom: var(--space-2);
 }
 
-.group-title {
-  font-weight: 600;
-  font-size: var(--fs-md);
-  color: var(--app-fg);
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--panel-border);
+.setting-divider {
+  height: 1px;
+  background: var(--panel-border);
+  margin: var(--space-1) 0;
 }
 
 .setting-row {

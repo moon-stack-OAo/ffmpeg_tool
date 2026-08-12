@@ -46,6 +46,7 @@ const {
   closeAction,
   trimStart,
   trimEnd,
+  rotate90,
   custom,
   currentPreset,
   isCustom,
@@ -70,6 +71,7 @@ const {
   onCloseActionChange,
   onTrimStartChange,
   onTrimEndChange,
+  onRotate90Change,
   onSelectOutput,
   startWatchers,
   stopWatchers,
@@ -444,6 +446,7 @@ async function onResetSettings(): Promise<void> {
         :preset-id="presetId"
         :target-size-mb="targetSizeMb"
         :task-mode="taskMode"
+        :rotate90="rotate90"
         :trim-end="trimEnd"
         :trim-start="trimStart"
         :two-pass="twoPass"
@@ -456,6 +459,7 @@ async function onResetSettings(): Promise<void> {
         @name-template-change="onNameTemplateChange"
         @output-dir-mode-change="onOutputDirModeChange"
         @preset-change="onPresetChange"
+        @rotate90-change="onRotate90Change"
         @select-output="onSelectOutput"
         @target-size-mb-change="onTargetSizeMbChange"
         @task-mode-change="onTaskModeChange"

@@ -107,6 +107,32 @@ describe('buildCompressArgs', () => {
     expect(args[vfIdx + 1]).toContain("scale='min(1280,iw)'")
   })
 
+  it('rotate90=cw 时包含 transpose=1', () => {
+    const args = buildCompressArgs(baseOptions({ rotate90: 'cw' }), 'libx264')
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe('transpose=1')
+  })
+
+  it('rotate90=ccw 时包含 transpose=2', () => {
+    const args = buildCompressArgs(baseOptions({ rotate90: 'ccw' }), 'libx264')
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe('transpose=2')
+  })
+
+  it('旋转 + 缩放：先 transpose 再 scale', () => {
+    const args = buildCompressArgs(
+      baseOptions({ rotate90: 'cw', maxEdge: 1280 }),
+      'libx264'
+    )
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe(
+      "transpose=1,scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease"
+    )
+  })
+
   it('targetSizeMb + duration 使用 -b:v ABR（libx264）', () => {
     const args = buildCompressArgs(
       baseOptions({ targetSizeMb: 10, crf: 23 }),

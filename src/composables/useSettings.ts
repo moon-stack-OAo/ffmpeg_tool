@@ -14,6 +14,7 @@ import {
   type OutputDirMode,
   type OutputFormat,
   type PresetId,
+  type Rotate90,
   type TaskMode,
   type ThemeMode
 } from '@shared/types'
@@ -52,6 +53,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const trimStart = ref(0)
   /** 裁剪结束秒，0 表示到结尾 */
   const trimEnd = ref(0)
+  /** 画面旋转 90°（任务级，不持久化到 settings） */
+  const rotate90 = ref<Rotate90>('none')
   const custom = reactive({
     crf: 23,
     maxEdge: 0,
@@ -88,6 +91,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
       typeof trimEnd.value === 'number' && trimEnd.value > 0
         ? trimEnd.value
         : undefined
+    const rotate =
+      rotate90.value === 'cw' || rotate90.value === 'ccw'
+        ? rotate90.value
+        : undefined
     const target =
       typeof targetSizeMb.value === 'number' &&
       Number.isFinite(targetSizeMb.value) &&
@@ -111,7 +118,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
             audioFormat: audioFormat.value,
             audioBitrate: audioBitrate.value,
             trimStart: trimStartSec,
-            trimEnd: trimEndSec
+            trimEnd: trimEndSec,
+            rotate90: rotate
           }
         : {
             presetId: p.id,
@@ -128,7 +136,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
             audioFormat: audioFormat.value,
             audioBitrate: audioBitrate.value,
             trimStart: trimStartSec,
-            trimEnd: trimEndSec
+            trimEnd: trimEndSec,
+            rotate90: rotate
           }
     return base
   }
@@ -407,6 +416,11 @@ export function useSettings(options: UseSettingsOptions = {}) {
     options.onOptionsChange?.()
   }
 
+  function onRotate90Change(v: Rotate90): void {
+    rotate90.value = v === 'cw' || v === 'ccw' ? v : 'none'
+    options.onOptionsChange?.()
+  }
+
   async function onSelectOutput(): Promise<void> {
     const res = await window.electronAPI.selectDirectory()
     if (res.path) {
@@ -462,6 +476,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     closeAction,
     trimStart,
     trimEnd,
+    rotate90,
     custom,
     currentPreset,
     isCustom,
@@ -490,6 +505,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onCloseActionChange,
     onTrimStartChange,
     onTrimEndChange,
+    onRotate90Change,
     onSelectOutput,
     startWatchers,
     stopWatchers

@@ -17,6 +17,8 @@ import {
   type OutputDirMode,
   type OutputFormat,
   type PresetId,
+  ROTATE90_OPTIONS,
+  type Rotate90,
   TASK_MODE_OPTIONS,
   type TaskMode
 } from '@shared/types'
@@ -44,6 +46,8 @@ defineProps<{
   trimStart: number
   /** 裁剪结束秒，0 表示到结尾 */
   trimEnd: number
+  /** 画面旋转 90° */
+  rotate90: Rotate90
   custom: {
     crf: number
     maxEdge: number
@@ -66,6 +70,7 @@ const emit = defineEmits<{
   twoPassChange: [v: boolean]
   trimStartChange: [v: number]
   trimEndChange: [v: number]
+  rotate90Change: [v: Rotate90]
   applyToPending: []
 }>()
 
@@ -232,7 +237,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
       >
         <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
         <span>高级选项</span>
-        <span class="muted">编码器 · 并发 · 裁剪 · 目标体积</span>
+        <span class="muted">编码器 · 并发 · 裁剪 · 旋转 · 目标体积</span>
       </button>
 
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
@@ -322,6 +327,24 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
               @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
             />
             <span class="hint-inline">0 = 不裁剪 / 到结尾</span>
+          </div>
+
+          <div v-if="!isAudioMode" class="opt-item">
+            <span class="label">旋转</span>
+            <el-select
+              :model-value="rotate90"
+              size="small"
+              class="w-5xl"
+              @change="(v: Rotate90) => emit('rotate90Change', v)"
+            >
+              <el-option
+                v-for="opt in ROTATE90_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <span class="hint-inline">画面转 90°，竖屏变横屏</span>
           </div>
 
           <template v-if="!isAudioMode">

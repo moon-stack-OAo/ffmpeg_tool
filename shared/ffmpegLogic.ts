@@ -268,6 +268,31 @@ export function buildScaleFilter(maxEdge: number): string | null {
   return `scale='min(${n},iw)':'min(${n},ih)':force_original_aspect_ratio=decrease`
 }
 
+/**
+ * 构建旋转滤镜（画面转 90°，竖屏→横屏）
+ * transpose=1 顺时针；transpose=2 逆时针
+ */
+export function buildRotateFilter(
+  rotate90: CompressOptions['rotate90']
+): string | null {
+  if (rotate90 === 'cw') return 'transpose=1'
+  if (rotate90 === 'ccw') return 'transpose=2'
+  return null
+}
+
+/**
+ * 组合视频滤镜：先旋转再缩放（最长边限制作用于最终画面）
+ */
+export function buildVideoFilter(options: CompressOptions): string | null {
+  const parts: string[] = []
+  const rotate = buildRotateFilter(options.rotate90)
+  if (rotate) parts.push(rotate)
+  const scale = buildScaleFilter(options.maxEdge)
+  if (scale) parts.push(scale)
+  if (parts.length === 0) return null
+  return parts.join(',')
+}
+
 /** 是否支持经典 -pass 1/2 两遍编码（仅软件 x264 / VP9） */
 export function supportsTwoPass(resolved: ResolvedEncoder): boolean {
   return resolved === 'libx264' || resolved === 'libvpx-vp9'
@@ -326,7 +351,7 @@ export function buildCompressArgs(
 ): string[] {
   const args: string[] = []
   const format = options.format || 'mp4'
-  const scale = buildScaleFilter(options.maxEdge)
+  const vf = buildVideoFilter(options)
   const quality = mapCrfToHardwareQuality(options.crf)
   const durationSec =
     ctx?.durationSec != null &&
@@ -404,8 +429,8 @@ export function buildCompressArgs(
     } else {
       args.push('-c:a', 'libopus', '-b:a', '128k')
     }
-    if (scale) {
-      args.push('-vf', scale)
+    if (vf) {
+      args.push('-vf', vf)
     }
     // pass1 用 null 容器；pass2 / 单遍用 webm
     if (pass === 1) {
@@ -559,8 +584,8 @@ export function buildCompressArgs(
     args.push('-c:a', 'aac', '-b:a', '128k')
   }
 
-  if (scale) {
-    args.push('-vf', scale)
+  if (vf) {
+    args.push('-vf', vf)
   }
 
   // 容器相关

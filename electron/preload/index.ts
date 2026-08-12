@@ -244,6 +244,13 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IpcChannels.SHOW_ITEM_IN_FOLDER, p),
   setDataDir: (dir: string) => ipcRenderer.invoke(IpcChannels.SET_DATA_DIR, dir),
   relaunchApp: () => ipcRenderer.invoke(IpcChannels.RELAUNCH_APP),
+  windowMinimize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MINIMIZE),
+  windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannels.WINDOW_MAXIMIZE),
+  windowClose: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE),
+  windowIsMaximized: () => ipcRenderer.invoke(IpcChannels.WINDOW_IS_MAXIMIZED),
+  windowCloseDecision: (action: 'tray' | 'quit', remember: boolean) =>
+    ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE_DECISION, action, remember),
+  windowCloseCancel: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE_CANCEL),
 
   onFilesDropped: (callback) => {
     const handler = (
@@ -295,6 +302,26 @@ const api: ElectronAPI = {
     ipcRenderer.on(IpcChannels.UPDATE_STATUS, handler)
     return () => {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATUS, handler)
+    }
+  },
+
+  onWindowMaximizedChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, maximized: boolean): void => {
+      callback(Boolean(maximized))
+    }
+    ipcRenderer.on(IpcChannels.WINDOW_MAXIMIZED_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_MAXIMIZED_CHANGED, handler)
+    }
+  },
+
+  onWindowCloseAsk: (callback) => {
+    const handler = (): void => {
+      callback()
+    }
+    ipcRenderer.on(IpcChannels.WINDOW_CLOSE_ASK, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_CLOSE_ASK, handler)
     }
   }
 }

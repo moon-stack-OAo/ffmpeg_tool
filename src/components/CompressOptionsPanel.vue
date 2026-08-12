@@ -400,7 +400,8 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
 
 .opt-advanced {
   margin-top: var(--space-3);
-  border-top: 1px solid var(--panel-border);
+  border-top: none;
+  box-shadow: inset 0 1px 0 0 var(--panel-border);
   padding-top: var(--space-2);
 }
 

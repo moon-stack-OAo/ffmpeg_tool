@@ -379,16 +379,17 @@ function inlineHtml(text: string): string {
   min-width: 0;
   padding: 10px var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid var(--panel-border);
+  border: none;
   background: var(--notes-bg);
+  box-shadow: var(--ring-soft);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .ver-card.is-new {
-  border-color: color-mix(in srgb, var(--primary) 35%, var(--panel-border));
   background: color-mix(in srgb, var(--primary) 8%, var(--notes-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
 .ver-label {
@@ -443,9 +444,10 @@ function inlineHtml(text: string): string {
 }
 
 .update-notes {
-  border: 1px solid var(--panel-border);
+  border: none;
   border-radius: var(--radius-md);
   background: var(--notes-bg);
+  box-shadow: var(--ring-soft);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -458,7 +460,8 @@ function inlineHtml(text: string): string {
   font-weight: 600;
   color: var(--app-fg-secondary);
   padding: 10px var(--space-3) 8px;
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: none;
+  box-shadow: inset 0 -1px 0 0 var(--panel-border);
 }
 
 .update-notes-scroll {

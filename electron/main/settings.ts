@@ -4,6 +4,7 @@ import { app } from 'electron'
 import type {
   AppSettings,
   AudioFormat,
+  CloseAction,
   EncoderId,
   OutputDirMode,
   OutputFormat,
@@ -34,7 +35,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifyOnComplete: true,
   persistTasks: true,
   theme: 'system',
-  ffmpegBinDir: ''
+  ffmpegBinDir: '',
+  closeAction: 'ask'
 }
 
 let cached: AppSettings | null = null
@@ -72,6 +74,11 @@ function normalizeTargetSizeMb(v: unknown): number {
 function normalizeTheme(v: unknown): ThemeMode {
   if (v === 'light' || v === 'dark' || v === 'system') return v
   return DEFAULT_SETTINGS.theme
+}
+
+function normalizeCloseAction(v: unknown): CloseAction {
+  if (v === 'tray' || v === 'quit' || v === 'ask') return v
+  return DEFAULT_SETTINGS.closeAction
 }
 
 function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
@@ -113,7 +120,8 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
         : DEFAULT_SETTINGS.persistTasks,
     theme: normalizeTheme(src.theme),
     ffmpegBinDir:
-      typeof src.ffmpegBinDir === 'string' ? src.ffmpegBinDir.trim() : ''
+      typeof src.ffmpegBinDir === 'string' ? src.ffmpegBinDir.trim() : '',
+    closeAction: normalizeCloseAction(src.closeAction)
   }
 }
 

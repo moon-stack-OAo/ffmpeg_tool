@@ -3,8 +3,10 @@ import {onMounted, onUnmounted, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import type {AppInfo} from '@shared/types'
 import AppToolbar from './components/AppToolbar.vue'
+import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import DropZone from './components/DropZone.vue'
+import CloseConfirmDialog from './components/CloseConfirmDialog.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
 import ShortcutHelpDialog from './components/ShortcutHelpDialog.vue'
 import SizeSummaryBar from './components/SizeSummaryBar.vue'
@@ -42,6 +44,7 @@ const {
   audioBitrate,
   notifyOnComplete,
   theme,
+  closeAction,
   trimStart,
   trimEnd,
   custom,
@@ -65,6 +68,7 @@ const {
   onAudioBitrateChange,
   onNotifyOnCompleteChange,
   onPersistTasksChange,
+  onCloseActionChange,
   onTrimStartChange,
   onTrimEndChange,
   onSelectOutput,
@@ -145,11 +149,13 @@ const {
 const appInfo = ref<AppInfo | null>(null)
 const shortcutHelpVisible = ref(false)
 const settingsVisible = ref(false)
+const closeConfirmVisible = ref(false)
 
 let cleanupTasks: (() => void) | undefined
 let cleanupUpdater: (() => void) | undefined
 let cleanupDrag: (() => void) | undefined
 let cleanupHotkeys: (() => void) | undefined
+let cleanupCloseAsk: (() => void) | undefined
 
 onMounted(async () => {
   // 1) 恢复持久化设置
@@ -203,6 +209,9 @@ onMounted(async () => {
       shortcutHelpVisible.value = true
     }
   })
+  cleanupCloseAsk = window.electronAPI.onWindowCloseAsk(() => {
+    closeConfirmVisible.value = true
+  })
 })
 
 onUnmounted(() => {
@@ -212,7 +221,26 @@ onUnmounted(() => {
   cleanupUpdater?.()
   cleanupDrag?.()
   cleanupHotkeys?.()
+  cleanupCloseAsk?.()
 })
+
+async function onCloseDecide(
+  action: 'tray' | 'quit',
+  remember: boolean
+): Promise<void> {
+  if (remember) {
+    onCloseActionChange(action)
+  }
+  try {
+    await window.electronAPI.windowCloseDecision(action, remember)
+  } catch {
+    // ignore
+  }
+}
+
+function onCloseCancel(): void {
+  void window.electronAPI.windowCloseCancel()
+}
 
 /** 浏览并设置自定义 ffmpeg bin 目录 */
 async function onBrowseFfmpegDir(): Promise<void> {
@@ -335,8 +363,13 @@ async function onResetSettings(): Promise<void> {
       @dragover="onDragOver"
       @drop="onDrop"
   >
-    <AppToolbar
+    <TitleBar
         :app-version="appVersion"
+        @open-settings="settingsVisible = true"
+        @show-shortcuts="shortcutHelpVisible = true"
+    />
+
+    <AppToolbar
         :ffmpeg-status="ffmpegStatus"
         :has-active="hasActive"
         :has-pending="hasPending"
@@ -347,15 +380,14 @@ async function onResetSettings(): Promise<void> {
         @clear-finished="clearFinished"
         @select-files="onSelectFiles"
         @select-output="onSelectOutput"
-        @show-shortcuts="shortcutHelpVisible = true"
         @start-all="startAll"
-        @open-settings="settingsVisible = true"
     />
 
     <SettingsDrawer
         v-model:visible="settingsVisible"
         :app-info="appInfo"
         :app-version="appVersion"
+        :close-action="closeAction"
         :concurrency="concurrency"
         :ffmpeg-bin-dir="ffmpegBinDir"
         :ffmpeg-status="ffmpegStatus"
@@ -369,6 +401,7 @@ async function onResetSettings(): Promise<void> {
         @check-update="onCheckUpdate"
         @clear-ffmpeg-bin-dir="onClearFfmpegBinDir"
         @clear-stored-tasks="onClearStoredTasks"
+        @close-action-change="onCloseActionChange"
         @concurrency-change="onConcurrencyChange"
         @notify-on-complete-change="onNotifyOnCompleteChange"
         @open-app-data="onOpenAppData"
@@ -391,6 +424,12 @@ async function onResetSettings(): Promise<void> {
     />
 
     <ShortcutHelpDialog v-model="shortcutHelpVisible" />
+
+    <CloseConfirmDialog
+        v-model="closeConfirmVisible"
+        @cancel="onCloseCancel"
+        @decide="onCloseDecide"
+    />
 
     <CompressOptionsPanel
         :audio-bitrate="audioBitrate"

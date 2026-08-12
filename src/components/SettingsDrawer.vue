@@ -2,8 +2,9 @@
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
-import type { AppInfo, FfmpegStatus, ThemeMode } from '@shared/types'
+import type { AppInfo, CloseAction, FfmpegStatus, ThemeMode } from '@shared/types'
 import {
+  CLOSE_ACTION_OPTIONS,
   CONCURRENCY_HINT,
   CONCURRENCY_OPTIONS,
   THEME_OPTIONS
@@ -15,6 +16,7 @@ const props = defineProps<{
   concurrency: number
   notifyOnComplete: boolean
   persistTasks: boolean
+  closeAction: CloseAction
   ffmpegBinDir: string
   ffmpegStatus: FfmpegStatus | null
   appVersion: string
@@ -29,6 +31,7 @@ const emit = defineEmits<{
   concurrencyChange: [n: number]
   notifyOnCompleteChange: [v: boolean]
   persistTasksChange: [v: boolean]
+  closeActionChange: [v: CloseAction]
   browseFfmpegDir: []
   clearFfmpegBinDir: []
   reDetectFfmpeg: []
@@ -165,6 +168,23 @@ function onPathKeydown(e: KeyboardEvent): void {
               @change="(v: string | number | boolean) => emit('persistTasksChange', Boolean(v))"
             />
           </div>
+          <div class="setting-row">
+            <span class="setting-label">关闭窗口</span>
+            <el-select
+              :model-value="closeAction"
+              size="small"
+              class="w-xl"
+              @change="(v: CloseAction) => emit('closeActionChange', v)"
+            >
+              <el-option
+                v-for="opt in CLOSE_ACTION_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+            <span class="setting-hint">点击关闭按钮时的默认行为</span>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -300,8 +320,12 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .settings-tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-  background-color: var(--panel-border);
+  height: 0;
+  background: none;
+}
+
+.settings-tabs :deep(.el-tabs__nav-wrap) {
+  box-shadow: inset 0 -1px 0 0 var(--panel-border);
 }
 
 .settings-tabs :deep(.el-tabs__item) {
@@ -339,9 +363,9 @@ function onPathKeydown(e: KeyboardEvent): void {
 }
 
 .setting-divider {
-  height: 1px;
-  background: var(--panel-border);
-  margin: var(--space-1) 0;
+  height: 0;
+  margin: var(--space-2) 0;
+  box-shadow: inset 0 -1px 0 0 var(--panel-border);
 }
 
 .setting-row {

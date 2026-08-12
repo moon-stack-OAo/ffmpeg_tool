@@ -248,6 +248,19 @@ export interface AppVersionInfo {
 /** 主题：浅色 / 深色 / 跟随系统 */
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+/** 点击关闭时的行为 */
+export type CloseAction = 'ask' | 'tray' | 'quit'
+
+/** 关闭行为选项（设置 / 关闭确认） */
+export const CLOSE_ACTION_OPTIONS: ReadonlyArray<{
+  value: CloseAction
+  label: string
+}> = [
+  { value: 'ask', label: '每次询问' },
+  { value: 'tray', label: '最小化到托盘' },
+  { value: 'quit', label: '直接退出' }
+]
+
 /** 应用持久化设置 */
 export interface AppSettings {
   outputDir: string
@@ -282,6 +295,13 @@ export interface AppSettings {
   theme: ThemeMode
   /** 自定义 ffmpeg bin 目录（含 ffmpeg 与 ffprobe），空串=自动探测 */
   ffmpegBinDir: string
+  /**
+   * 点击关闭按钮时的行为
+   * - ask：弹窗询问（默认）
+   * - tray：最小化到系统托盘
+   * - quit：直接退出应用
+   */
+  closeAction: CloseAction
 }
 
 /** 应用信息（设置抽屉「关于」展示） */
@@ -332,6 +352,15 @@ export const IpcChannels = {
   SET_DATA_DIR: 'app:set-data-dir',
   /** 重启应用 */
   RELAUNCH_APP: 'app:relaunch',
+  /** 窗口控制：最小化 / 最大化切换 / 关闭 / 查询最大化 */
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE: 'window:maximize',
+  WINDOW_CLOSE: 'window:close',
+  WINDOW_IS_MAXIMIZED: 'window:is-maximized',
+  /** 渲染进程对关闭询问的应答：托盘 / 退出 */
+  WINDOW_CLOSE_DECISION: 'window:close-decision',
+  /** 渲染进程取消关闭询问 */
+  WINDOW_CLOSE_CANCEL: 'window:close-cancel',
   /** preload → 主进程：拖拽解析后的文件列表 */
   FILES_DROPPED_FROM_PRELOAD: 'files:dropped-from-preload',
   // 主 → 渲染
@@ -340,7 +369,11 @@ export const IpcChannels = {
   TASK_QUEUED: 'task:queued',
   UPDATE_STATUS: 'update:status',
   /** 主 → 渲染：转发拖拽文件 */
-  FILES_DROPPED: 'files:dropped'
+  FILES_DROPPED: 'files:dropped',
+  /** 主 → 渲染：窗口最大化状态变化 */
+  WINDOW_MAXIMIZED_CHANGED: 'window:maximized-changed',
+  /** 主 → 渲染：需要用户选择关闭方式 */
+  WINDOW_CLOSE_ASK: 'window:close-ask'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
@@ -559,6 +592,25 @@ export interface ElectronAPI {
   setDataDir: (dir: string) => Promise<{ ok: boolean; error?: string; restart?: boolean }>
   /** 重启应用（用于数据目录等更改生效） */
   relaunchApp: () => Promise<void>
+  /** 窗口最小化 */
+  windowMinimize: () => Promise<void>
+  /** 最大化 / 还原切换 */
+  windowMaximizeToggle: () => Promise<boolean>
+  /** 关闭窗口 */
+  windowClose: () => Promise<void>
+  /** 当前是否最大化 */
+  windowIsMaximized: () => Promise<boolean>
+  /**
+   * 关闭询问结果
+   * @param action tray=托盘 / quit=退出
+   * @param remember 是否写入 closeAction 并不再询问
+   */
+  windowCloseDecision: (
+    action: 'tray' | 'quit',
+    remember: boolean
+  ) => Promise<void>
+  /** 取消关闭询问（重置主进程 pending 状态） */
+  windowCloseCancel: () => Promise<void>
   /**
    * 订阅拖拽文件（preload 解析路径 → 主进程 → 渲染进程）
    */
@@ -569,6 +621,10 @@ export interface ElectronAPI {
   onTaskEnd: (callback: (payload: TaskEndPayload) => void) => () => void
   onTaskQueued: (callback: (taskId: string) => void) => () => void
   onUpdateStatus: (callback: (payload: UpdateStatusPayload) => void) => () => void
+  /** 订阅窗口最大化状态 */
+  onWindowMaximizedChanged: (callback: (maximized: boolean) => void) => () => void
+  /** 订阅关闭询问（需弹窗） */
+  onWindowCloseAsk: (callback: () => void) => () => void
 }
 
 declare global {

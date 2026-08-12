@@ -9,8 +9,11 @@
   --app-fg-muted: #909399;
   --app-fg-hint: #909399;
   --panel-bg: #fff;
-  --panel-border: rgba(15, 23, 42, 0.06);
-  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
+  --panel-border: rgba(15, 23, 42, 0.1);
+  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.05);
+  /* 自定义描边（box-shadow 模拟，非原生 border） */
+  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in srgb, var(--panel-border) 28%, transparent);
+  --ring-soft: 0 0 0 1px color-mix(in srgb, var(--panel-border) 75%, transparent);
   --border-dashed: #c0c4cc;
   --drop-hover-bg: #f0f9ff;
   --drop-active-bg: #ecf5ff;
@@ -49,8 +52,10 @@ html.dark {
   --app-fg-muted: #a3a6ad;
   --app-fg-hint: #8b8f97;
   --panel-bg: #1a1d24;
-  --panel-border: rgba(255, 255, 255, 0.06);
-  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 16px rgba(0, 0, 0, 0.22);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.28);
+  --ring: 0 0 0 1px var(--panel-border), 0 0 0 3px color-mix(in srgb, var(--panel-border) 35%, transparent);
+  --ring-soft: 0 0 0 1px color-mix(in srgb, var(--panel-border) 75%, transparent);
   --border-dashed: #4c4f56;
   --drop-hover-bg: #1a2332;
   --drop-active-bg: #1c2a3d;
@@ -115,11 +120,20 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: var(--space-page);
+  padding: 0 var(--space-page) var(--space-page);
   gap: var(--space-gap);
   background: var(--app-bg);
   color: var(--app-fg);
   overflow: hidden;
+}
+
+/* 自定义标题栏贴顶，下方内容再留间距 */
+.page > .title-bar {
+  margin: 0 calc(-1 * var(--space-page)) 0;
+}
+
+.page > .toolbar {
+  margin-top: 0;
 }
 
 .page.page-dragging {
@@ -142,10 +156,10 @@ body,
   gap: 10px var(--space-3);
   align-items: center;
   background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
+  border: none;
   border-radius: var(--radius-md);
   padding: 10px var(--space-page);
-  box-shadow: var(--panel-shadow);
+  box-shadow: var(--ring), var(--panel-shadow);
   flex-shrink: 0;
 }
 
@@ -156,19 +170,30 @@ body,
 }
 
 .drop-zone {
-  border: 2px dashed var(--border-dashed);
+  border: none;
   border-radius: var(--radius-md);
-  background: var(--panel-bg);
+  background:
+    linear-gradient(var(--panel-bg), var(--panel-bg)) padding-box,
+    repeating-linear-gradient(
+      -45deg,
+      var(--border-dashed) 0 6px,
+      transparent 6px 12px
+    ) border-box;
+  background-clip: padding-box, border-box;
+  background-origin: border-box;
+  /* 用透明边框占位，实际描边来自渐变（非 solid 原生框线） */
+  border: 2px solid transparent;
   padding: 36px var(--space-5) 32px;
   text-align: center;
   color: var(--app-fg-muted);
   cursor: pointer;
+  box-shadow: var(--panel-shadow);
   transition:
-    border-color 0.2s,
     background 0.2s,
     box-shadow 0.2s,
     padding 0.2s,
-    transform 0.1s;
+    transform 0.1s,
+    color 0.2s;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -198,16 +223,34 @@ body,
 }
 
 .drop-zone.active {
-  border-color: var(--drop-active-color);
-  background: var(--drop-active-bg);
   color: var(--drop-active-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--drop-active-color) var(--overlay-focus), transparent);
+  background:
+    linear-gradient(var(--drop-active-bg), var(--drop-active-bg)) padding-box,
+    repeating-linear-gradient(
+      -45deg,
+      var(--drop-active-color) 0 6px,
+      transparent 6px 12px
+    ) border-box;
+  background-clip: padding-box, border-box;
+  background-origin: border-box;
+  border: 2px solid transparent;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--drop-active-color) var(--overlay-focus), transparent),
+    var(--panel-shadow);
 }
 
 .drop-zone:hover {
-  border-color: var(--drop-active-color);
-  background: var(--drop-hover-bg);
   color: var(--drop-active-color);
+  background:
+    linear-gradient(var(--drop-hover-bg), var(--drop-hover-bg)) padding-box,
+    repeating-linear-gradient(
+      -45deg,
+      var(--drop-active-color) 0 6px,
+      transparent 6px 12px
+    ) border-box;
+  background-clip: padding-box, border-box;
+  background-origin: border-box;
+  border: 2px solid transparent;
 }
 
 .drop-zone:focus-visible {
@@ -283,10 +326,10 @@ body,
 
 .panel {
   background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
+  border: none;
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-page);
-  box-shadow: var(--panel-shadow);
+  box-shadow: var(--ring), var(--panel-shadow);
   color: var(--app-fg);
   flex-shrink: 0;
 }
@@ -520,6 +563,47 @@ body,
 
 /* 更新弹窗样式见 UpdateDialog.vue scoped */
 
+/* 自定义浮层描边：去掉 Element 默认边框，改用 ring + 阴影 */
+.el-dialog,
+.el-drawer {
+  border: none !important;
+  box-shadow: var(--ring), 0 12px 40px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  background: var(--panel-bg) !important;
+}
+
+html.dark .el-dialog,
+html.dark .el-drawer {
+  box-shadow: var(--ring), 0 16px 48px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.28) !important;
+}
+
+.el-dialog__header,
+.el-drawer__header {
+  margin-right: 0;
+  border-bottom: none;
+  box-shadow: inset 0 -1px 0 0 var(--panel-border);
+  padding-bottom: 14px;
+  margin-bottom: 0;
+  color: var(--app-fg);
+}
+
+.el-dialog__footer {
+  border-top: none;
+  box-shadow: inset 0 1px 0 0 var(--panel-border);
+  padding-top: 14px;
+}
+
+.el-dialog__title,
+.el-drawer__title {
+  color: var(--app-fg);
+  font-weight: 600;
+}
+
+.el-overlay-dialog .el-dialog,
+.el-drawer.rtl,
+.el-drawer.ltr {
+  overflow: hidden;
+}
+
 .panel-title .muted {
   font-weight: 400;
   color: var(--app-fg-muted);
@@ -532,6 +616,45 @@ body,
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
+}
+
+/* 表格：去掉原生外框，改用自定义 ring */
+.task-table .el-table {
+  --el-table-border-color: color-mix(in srgb, var(--panel-border) 85%, transparent);
+  --el-table-header-bg-color: color-mix(in srgb, var(--app-fg) 3%, var(--panel-bg));
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  background: transparent;
+  border: none !important;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--ring-soft);
+  overflow: hidden;
+}
+
+.task-table .el-table::before,
+.task-table .el-table::after,
+.task-table .el-table__inner-wrapper::before {
+  display: none !important;
+}
+
+.task-table .el-table__border-left-patch,
+.task-table .el-table--border::after,
+.task-table .el-table--border::before {
+  display: none !important;
+}
+
+.task-table .el-table th.el-table__cell {
+  border-bottom: none !important;
+  box-shadow: inset 0 -1px 0 0 var(--el-table-border-color);
+}
+
+.task-table .el-table td.el-table__cell {
+  border-bottom: none !important;
+  box-shadow: inset 0 -1px 0 0 color-mix(in srgb, var(--panel-border) 55%, transparent);
+}
+
+.task-table .el-table__row:last-child td.el-table__cell {
+  box-shadow: none;
 }
 
 /* 表格空态更轻 */

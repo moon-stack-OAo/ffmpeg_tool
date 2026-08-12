@@ -1,11 +1,10 @@
 <script lang="ts" setup>
-import { Folder, FolderOpened, QuestionFilled, Setting } from '@element-plus/icons-vue'
+import { Folder, FolderOpened } from '@element-plus/icons-vue'
 import type { FfmpegStatus } from '@shared/types'
 
 defineProps<{
   ffmpegStatus: FfmpegStatus
   outputDir: string
-  appVersion: string
   hasPending: boolean
   hasActive: boolean
   taskCount: number
@@ -18,8 +17,6 @@ const emit = defineEmits<{
   cancelAll: []
   clearFinished: []
   clearAll: []
-  showShortcuts: []
-  openSettings: []
 }>()
 </script>
 
@@ -59,26 +56,6 @@ const emit = defineEmits<{
         <el-button @click="emit('clearFinished')">清除已完成</el-button>
         <el-button plain type="danger" @click="emit('clearAll')">清空列表</el-button>
       </div>
-
-      <div class="toolbar-meta">
-        <el-button
-          :icon="Setting"
-          circle
-          plain
-          size="small"
-          title="设置"
-          @click="emit('openSettings')"
-        />
-        <el-button
-          :icon="QuestionFilled"
-          circle
-          plain
-          size="small"
-          title="快捷键 (F1)"
-          @click="emit('showShortcuts')"
-        />
-        <el-tag effect="plain" size="small" type="info">v{{ appVersion }}</el-tag>
-      </div>
     </div>
   </div>
 </template>
@@ -86,8 +63,7 @@ const emit = defineEmits<{
 <style scoped>
 .toolbar-left,
 .toolbar-right,
-.toolbar-actions,
-.toolbar-meta {
+.toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -123,21 +99,10 @@ const emit = defineEmits<{
   gap: var(--space-2);
 }
 
-.toolbar-meta {
-  gap: var(--space-2);
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--panel-border);
-}
-
 @media (max-width: 720px) {
-  .toolbar-meta {
-    padding-left: 0;
-    border-left: none;
-  }
-
   .toolbar-right {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 }
 </style>

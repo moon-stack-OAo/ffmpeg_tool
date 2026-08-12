@@ -7,6 +7,7 @@ import {
   DEFAULT_NAME_TEMPLATE,
   type AppSettings,
   type AudioFormat,
+  type CloseAction,
   type CompressOptions,
   DEFAULT_PRESETS,
   type EncoderId,
@@ -45,6 +46,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const theme = ref<ThemeMode>('system')
   /** 自定义 ffmpeg bin 目录（含 ffmpeg 与 ffprobe），空串=自动探测 */
   const ffmpegBinDir = ref('')
+  /** 关闭按钮行为：ask | tray | quit */
+  const closeAction = ref<CloseAction>('ask')
   /** 裁剪开始秒，0 表示不裁剪（任务级，不持久化到 settings） */
   const trimStart = ref(0)
   /** 裁剪结束秒，0 表示到结尾 */
@@ -149,6 +152,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     notifyOnComplete: boolean
     persistTasks: boolean
     theme: ThemeMode
+    closeAction: CloseAction
   }>): void {
     if (persistTimer) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
@@ -169,7 +173,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
         audioBitrate: audioBitrate.value,
         notifyOnComplete: notifyOnComplete.value,
         persistTasks: persistTasks.value,
-        theme: theme.value
+        theme: theme.value,
+        closeAction: closeAction.value
       }
       void window.electronAPI.setSettings(payload)
     }, 300)
@@ -223,6 +228,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
         : 'system'
     ffmpegBinDir.value =
       typeof s.ffmpegBinDir === 'string' ? s.ffmpegBinDir : ''
+    closeAction.value =
+      s.closeAction === 'tray' || s.closeAction === 'quit' || s.closeAction === 'ask'
+        ? s.closeAction
+        : 'ask'
   }
 
   async function loadSettings(): Promise<void> {
@@ -381,6 +390,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
     persist({ persistTasks: v })
   }
 
+  function onCloseActionChange(v: CloseAction): void {
+    closeAction.value =
+      v === 'tray' || v === 'quit' || v === 'ask' ? v : 'ask'
+    persist({ closeAction: closeAction.value })
+  }
+
   /** 裁剪变更：仅同步 pending 任务，不写入 settings */
   function onTrimStartChange(v: number): void {
     trimStart.value = typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0
@@ -444,6 +459,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     persistTasks,
     theme,
     ffmpegBinDir,
+    closeAction,
     trimStart,
     trimEnd,
     custom,
@@ -471,6 +487,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onAudioBitrateChange,
     onNotifyOnCompleteChange,
     onPersistTasksChange,
+    onCloseActionChange,
     onTrimStartChange,
     onTrimEndChange,
     onSelectOutput,

@@ -1,7 +1,7 @@
-import {app, BrowserWindow, dialog, ipcMain, shell} from 'electron'
+import {app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray} from 'electron'
 import {basename, extname, join} from 'path'
 import {existsSync} from 'fs'
-import type {AppSettings, CompressTask} from '../../shared/types'
+import type {AppSettings, CloseAction, CompressTask} from '../../shared/types'
 import {IpcChannels, VIDEO_EXTENSIONS} from '../../shared/types'
 import {checkFfmpegAvailable, detectHardwareEncoders, setBinaryOverride} from './ffmpeg'
 import {collectVideoFiles} from './mediaScan'
@@ -19,6 +19,11 @@ function isDev(): boolean {
 }
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+/** 为 true 时允许真正关闭窗口（退出应用） */
+let allowQuit = false
+/** 关闭询问中，避免重复弹窗 */
+let closeAskPending = false
 
 /** 开发态用 build 目录图标；打包后由安装包/exe 承载品牌图标 */
 function resolveWindowIcon(): string | undefined {
@@ -34,16 +39,93 @@ function resolveWindowIcon(): string | undefined {
   return undefined
 }
 
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function hideToTray(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  ensureTray()
+  mainWindow.hide()
+  closeAskPending = false
+}
+
+function quitApp(): void {
+  allowQuit = true
+  closeAskPending = false
+  taskQueue.cancelAll()
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
+  app.quit()
+}
+
+function ensureTray(): void {
+  if (tray) return
+  const iconPath = resolveWindowIcon()
+  const image = iconPath
+    ? nativeImage.createFromPath(iconPath)
+    : nativeImage.createEmpty()
+  tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image)
+  tray.setToolTip('FFmpeg 视频压缩工具')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: '显示主窗口',
+        click: () => showMainWindow()
+      },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: () => quitApp()
+      }
+    ])
+  )
+  tray.on('double-click', () => showMainWindow())
+  tray.on('click', () => showMainWindow())
+}
+
+function handleCloseRequest(): void {
+  if (allowQuit) return
+  const action: CloseAction = getSettings().closeAction || 'ask'
+  if (action === 'quit') {
+    quitApp()
+    return
+  }
+  if (action === 'tray') {
+    hideToTray()
+    return
+  }
+  // ask
+  if (closeAskPending) return
+  closeAskPending = true
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isVisible()) showMainWindow()
+    mainWindow.webContents.send(IpcChannels.WINDOW_CLOSE_ASK)
+  } else {
+    closeAskPending = false
+    quitApp()
+  }
+}
+
 function createWindow(): void {
   const icon = resolveWindowIcon()
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
-    minWidth: 1000,
-    minHeight: 680,
+    minWidth: 1360,
+    minHeight: 900,
+    resizable: false,
+    maximizable: true,
     show: false,
     title: 'FFmpeg 视频压缩工具',
+    frame: false,
     autoHideMenuBar: true,
+    backgroundColor: '#0f1115',
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -55,8 +137,26 @@ function createWindow(): void {
 
   taskQueue.setWindow(mainWindow)
 
+  const sendMaximized = (): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(
+        IpcChannels.WINDOW_MAXIMIZED_CHANGED,
+        mainWindow.isMaximized()
+      )
+    }
+  }
+  mainWindow.on('maximize', sendMaximized)
+  mainWindow.on('unmaximize', sendMaximized)
+
+  mainWindow.on('close', (e) => {
+    if (allowQuit) return
+    e.preventDefault()
+    handleCloseRequest()
+  })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+    sendMaximized()
     if (mainWindow) {
       initAutoUpdater(mainWindow)
     }
@@ -381,6 +481,47 @@ function registerIpc(): void {
     }
   })
 
+  ipcMain.handle(IpcChannels.WINDOW_MINIMIZE, async () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.handle(IpcChannels.WINDOW_MAXIMIZE, async () => {
+    if (!mainWindow) return false
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize()
+      return false
+    }
+    mainWindow.maximize()
+    return true
+  })
+
+  ipcMain.handle(IpcChannels.WINDOW_CLOSE, async () => {
+    handleCloseRequest()
+  })
+
+  ipcMain.handle(IpcChannels.WINDOW_IS_MAXIMIZED, async () => {
+    return mainWindow?.isMaximized() ?? false
+  })
+
+  ipcMain.handle(
+    IpcChannels.WINDOW_CLOSE_DECISION,
+    async (_e, action: 'tray' | 'quit', remember: boolean) => {
+      const next: CloseAction = action === 'tray' ? 'tray' : 'quit'
+      if (remember) {
+        saveSettings({ closeAction: next })
+      }
+      if (next === 'tray') {
+        hideToTray()
+      } else {
+        quitApp()
+      }
+    }
+  )
+
+  ipcMain.handle(IpcChannels.WINDOW_CLOSE_CANCEL, async () => {
+    closeAskPending = false
+  })
+
   // preload 拖拽解析结果 → 展开目录后转发到渲染进程
   ipcMain.on(
     IpcChannels.FILES_DROPPED_FROM_PRELOAD,
@@ -411,13 +552,21 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
+    } else {
+      showMainWindow()
     }
   })
 })
 
 app.on('window-all-closed', () => {
-  taskQueue.cancelAll()
-  if (process.platform !== 'darwin') {
+  // 托盘常驻时窗口可能被 hide 而非销毁；仅在真正退出时清理
+  if (allowQuit && process.platform !== 'darwin') {
+    taskQueue.cancelAll()
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  allowQuit = true
+  closeAskPending = false
 })

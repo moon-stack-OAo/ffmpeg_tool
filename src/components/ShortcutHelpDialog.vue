@@ -27,7 +27,7 @@ const rows = computed(() => [
   <el-dialog
     v-model="visible"
     title="快捷键"
-    width="480px"
+    width="min(480px, 92vw)"
     destroy-on-close
     append-to-body
   >

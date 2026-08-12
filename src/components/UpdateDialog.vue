@@ -27,7 +27,7 @@ function close(): void {
     :model-value="modelValue"
     :close-on-click-modal="false"
     title="软件更新"
-    width="480px"
+    width="min(480px, 92vw)"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="update-body">
@@ -43,7 +43,7 @@ function close(): void {
       <el-progress
         v-if="updateInfo.state === 'downloading'"
         :percentage="Math.min(100, Math.round(updateInfo.percent || 0))"
-        :stroke-width="14"
+        :stroke-width="12"
         striped
         striped-flow
       />

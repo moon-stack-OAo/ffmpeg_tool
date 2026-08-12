@@ -10,13 +10,23 @@ defineProps<{
 const emit = defineEmits<{
   click: []
 }>()
+
+function onKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    emit('click')
+  }
+}
 </script>
 
 <template>
   <div
     :class="{ active: dragging, compact: compact }"
     class="drop-zone"
+    role="button"
+    tabindex="0"
     @click="emit('click')"
+    @keydown="onKeydown"
   >
     <el-icon class="drop-icon" :size="compact ? 22 : 40">
       <UploadFilled />

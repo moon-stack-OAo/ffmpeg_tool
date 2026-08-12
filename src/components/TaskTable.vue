@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { type CompressTask, formatFileSize } from '@shared/types'
 import {
   formatEta,
@@ -40,8 +41,9 @@ async function copyCommand(): Promise<void> {
   if (!cmd) return
   try {
     await navigator.clipboard.writeText(cmd)
+    ElMessage.success('已复制命令行')
   } catch {
-    // ignore
+    ElMessage.error('复制失败')
   }
 }
 
@@ -264,45 +266,45 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 }
 
 .meta-text {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--app-fg-secondary);
 }
 
 .meta-muted {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--app-fg-muted);
 }
 
 .meta-ok {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--status-ok);
 }
 
 .detail-block {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .detail-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--app-fg-muted);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .detail-value {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--app-fg);
   word-break: break-all;
 }
 
 .detail-pre {
   margin: 0;
-  padding: 8px 10px;
+  padding: var(--space-2) 10px;
   background: var(--notes-bg);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
@@ -324,7 +326,7 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 .task-actions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   flex-wrap: nowrap;
 }
 

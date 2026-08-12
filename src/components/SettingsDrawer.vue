@@ -82,6 +82,13 @@ async function copyUserDataPath(): Promise<void> {
     ElMessage.error('复制失败')
   }
 }
+
+function onPathKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    void copyUserDataPath()
+  }
+}
 </script>
 
 <template>
@@ -102,7 +109,7 @@ async function copyUserDataPath(): Promise<void> {
           <el-select
             :model-value="theme"
             size="small"
-            style="width: 140px"
+            class="w-xl"
             @change="(v: ThemeMode) => emit('themeChange', v)"
           >
             <el-option
@@ -118,7 +125,7 @@ async function copyUserDataPath(): Promise<void> {
           <el-select
             :model-value="concurrency"
             size="small"
-            style="width: 90px"
+            class="w-sm"
             :title="CONCURRENCY_HINT"
             @change="(v: number) => emit('concurrencyChange', v)"
           >
@@ -208,13 +215,16 @@ async function copyUserDataPath(): Promise<void> {
         <div class="group-title">数据</div>
         <div class="setting-row">
           <span class="setting-label">数据目录</span>
-          <span
-            class="setting-value clickable"
+          <button
+            type="button"
+            class="setting-value path-copy-btn"
             :title="appInfo?.userDataPath ? '点击复制' : ''"
+            :disabled="!appInfo?.userDataPath"
             @click="copyUserDataPath"
+            @keydown="onPathKeydown"
           >
             {{ appInfo?.userDataPath || '—' }}
-          </span>
+          </button>
         </div>
         <div class="setting-row actions">
           <el-button size="small" @click="emit('openAppData')">打开数据目录</el-button>
@@ -253,16 +263,6 @@ async function copyUserDataPath(): Promise<void> {
           <span class="setting-label">Node</span>
           <span class="setting-value">{{ appInfo?.node ?? '—' }}</span>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">数据目录</span>
-          <span
-            class="setting-value clickable"
-            :title="appInfo?.userDataPath ? '点击复制' : ''"
-            @click="copyUserDataPath"
-          >
-            {{ appInfo?.userDataPath || '—' }}
-          </span>
-        </div>
         <div class="setting-row actions">
           <el-button :loading="updateChecking" size="small" @click="emit('checkUpdate')">
             检查更新
@@ -277,21 +277,21 @@ async function copyUserDataPath(): Promise<void> {
 .drawer-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .setting-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .group-title {
   font-weight: 600;
-  font-size: 13px;
-  color: var(--el-text-color-primary);
+  font-size: var(--fs-md);
+  color: var(--app-fg);
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .setting-row {
@@ -304,39 +304,57 @@ async function copyUserDataPath(): Promise<void> {
 .setting-label {
   flex-shrink: 0;
   width: 108px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
+  font-size: var(--fs-md);
+  color: var(--app-fg-secondary);
 }
 
 .setting-value {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--el-text-color-primary);
+  color: var(--app-fg);
 }
 
-.setting-value.clickable {
+.path-copy-btn {
+  margin: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  text-align: left;
+  font: inherit;
   cursor: pointer;
+  color: var(--app-fg);
 }
 
-.setting-value.clickable:hover {
-  color: var(--el-color-primary);
+.path-copy-btn:hover:not(:disabled) {
+  color: var(--primary);
+}
+
+.path-copy-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.path-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .setting-hint {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--fs-xs);
+  color: var(--app-fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .setting-error {
-  font-size: 12px;
-  color: var(--el-color-danger);
+  font-size: var(--fs-sm);
+  color: var(--status-bad);
 }
 
 .bin-dir-input {
@@ -346,6 +364,6 @@ async function copyUserDataPath(): Promise<void> {
 
 .setting-row.actions {
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 </style>

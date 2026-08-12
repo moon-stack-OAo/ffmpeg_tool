@@ -37,10 +37,10 @@ function resolveWindowIcon(): string | undefined {
 function createWindow(): void {
   const icon = resolveWindowIcon()
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 780,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1360,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 680,
     show: false,
     title: 'FFmpeg 视频压缩工具',
     autoHideMenuBar: true,

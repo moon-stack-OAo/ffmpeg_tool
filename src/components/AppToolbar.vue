@@ -91,7 +91,7 @@ const emit = defineEmits<{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -108,11 +108,11 @@ const emit = defineEmits<{
 .toolbar-right {
   flex: 0 1 auto;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .toolbar-error {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -120,37 +120,16 @@ const emit = defineEmits<{
 }
 
 .toolbar-actions {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .toolbar-meta {
-  gap: 8px;
-  padding-left: 12px;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
   border-left: 1px solid var(--panel-border);
 }
 
-.path-text {
-  min-width: 0;
-  flex: 0 1 260px;
-  max-width: min(260px, 28vw);
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
-}
-
-@media (max-width: 900px) {
-  .path-text {
-    flex-basis: 160px;
-    max-width: min(160px, 22vw);
-  }
-}
-
 @media (max-width: 720px) {
-  .path-text {
-    flex-basis: 120px;
-    max-width: min(120px, 18vw);
-  }
-
   .toolbar-meta {
     padding-left: 0;
     border-left: none;

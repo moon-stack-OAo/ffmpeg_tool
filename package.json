@@ -32,11 +32,13 @@
     "ffprobe-static": "^3.1.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "to-ico": "^1.1.5",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^3.2.7",

@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-- **1.0.0**：完整功能整合版（见 `CHANGELOG.md` / `package.json` 的 `version`）
+- **1.0.1**：设置抽屉、布局优化与依赖补全（见 `CHANGELOG.md` / `package.json` 的 `version`）
 - 未完成项仅保留在 `[Unreleased]` 计划（如代码签名 / 公证）
 
 ## 步骤

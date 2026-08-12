@@ -1,6 +1,6 @@
 {
   "name": "ffmpeg-tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "基于 FFmpeg 的本地视频压缩桌面工具",
   "main": "./out/main/index.js",
   "author": "ffmpeg-tool",

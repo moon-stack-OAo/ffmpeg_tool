@@ -9,6 +9,27 @@
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
 
+## [1.0.1] - 2026-08-12
+
+### 新增
+
+- **设置抽屉**：主题 / 并发 / 通知 / 任务持久化 / ffmpeg 路径 / 数据管理 / 关于
+- 支持自定义数据目录（重启生效）与 ffmpeg bin 覆盖
+- 工具栏左中右分区布局
+
+### 优化
+
+- 统一间距 / 字号 / 圆角设计 Token，清理死样式
+- 任务选项紧凑网格布局，高级项默认折叠
+- 空态三步引导；任务表次要操作收入更多菜单
+- 工作区弹性布局，有任务时压缩拖放区
+- 增强 DropZone / 设置路径 / 折叠按钮的键盘与焦点可达性
+- 默认窗口尺寸调整为 1360×900
+
+### 依赖
+
+- 添加 `@resvg/resvg-js`、`to-ico` 开发依赖（图标构建）
+
 ## [1.0.0] - 2026-08-10
 
 本地视频压缩桌面应用完整 1.0 能力整合版（Electron + Vue 3 + TypeScript + Element Plus）。
@@ -76,6 +97,8 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.1...HEAD
+
+[1.0.1]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.0...v1.0.1
 
 [1.0.0]: https://github.com/moon-stack-OAo/ffmpeg_tool/releases/tag/v1.0.0

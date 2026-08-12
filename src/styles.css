@@ -3,13 +3,14 @@
 }
 
 :root {
-  --app-bg: #f5f7fa;
+  --app-bg: #f3f5f9;
   --app-fg: #303133;
   --app-fg-secondary: #606266;
   --app-fg-muted: #909399;
   --app-fg-hint: #a8abb2;
   --panel-bg: #fff;
-  --panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --panel-border: rgba(15, 23, 42, 0.06);
+  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
   --border-dashed: #c0c4cc;
   --drop-hover-bg: #f0f9ff;
   --drop-active-bg: #ecf5ff;
@@ -21,6 +22,10 @@
   --link-color: #409eff;
   --notes-bg: #f5f7fa;
   --primary: #409eff;
+  --radius-md: 10px;
+  --radius-sm: 8px;
+  --space-page: 14px;
+  --space-gap: 12px;
 }
 
 html.dark {
@@ -30,7 +35,8 @@ html.dark {
   --app-fg-muted: #a3a6ad;
   --app-fg-hint: #8b8f97;
   --panel-bg: #1a1d24;
-  --panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --panel-border: rgba(255, 255, 255, 0.06);
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 16px rgba(0, 0, 0, 0.22);
   --border-dashed: #4c4f56;
   --drop-hover-bg: #1a2332;
   --drop-active-bg: #1c2a3d;
@@ -66,10 +72,11 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  gap: 12px;
+  padding: var(--space-page);
+  gap: var(--space-gap);
   background: var(--app-bg);
   color: var(--app-fg);
+  overflow: hidden;
 }
 
 .page.page-dragging {
@@ -78,16 +85,25 @@ body,
   background: var(--page-dragging-bg);
 }
 
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-gap);
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 12px;
   align-items: center;
   background: var(--panel-bg);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
   box-shadow: var(--panel-shadow);
-  row-gap: 10px;
+  flex-shrink: 0;
 }
 
 .toolbar .label {
@@ -97,24 +113,47 @@ body,
 }
 
 .drop-zone {
-  border: 2px dashed var(--border-dashed);
-  border-radius: 8px;
+  border: 1.5px dashed var(--border-dashed);
+  border-radius: var(--radius-md);
   background: var(--panel-bg);
-  padding: 28px 16px;
+  padding: 22px 16px;
   text-align: center;
   color: var(--app-fg-muted);
   cursor: pointer;
   transition:
     border-color 0.2s,
     background 0.2s,
-    box-shadow 0.2s;
+    box-shadow 0.2s,
+    padding 0.2s;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.drop-zone.compact {
+  padding: 10px 14px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  text-align: left;
+}
+
+.drop-zone.compact .drop-title {
+  font-size: 13px;
+}
+
+.drop-zone.compact .hint {
+  margin-top: 0;
 }
 
 .drop-zone.active {
   border-color: var(--drop-active-color);
   background: var(--drop-active-bg);
   color: var(--drop-active-color);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--drop-active-color) 18%, transparent);
 }
 
 .drop-zone:hover {
@@ -123,18 +162,37 @@ body,
   color: var(--drop-active-color);
 }
 
+.drop-zone .drop-icon {
+  color: inherit;
+  opacity: 0.9;
+}
+
+.drop-zone .drop-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+}
+
 .drop-zone .hint {
-  margin-top: 6px;
+  margin-top: 2px;
   font-size: 12px;
   color: var(--app-fg-hint);
 }
 
+.drop-zone:hover .hint,
+.drop-zone.active .hint {
+  color: inherit;
+  opacity: 0.85;
+}
+
 .panel {
   background: var(--panel-bg);
-  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
   padding: 12px 14px;
   box-shadow: var(--panel-shadow);
   color: var(--app-fg);
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -144,6 +202,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   color: var(--app-fg);
 }
 
@@ -152,12 +211,13 @@ body,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-gap);
 }
 
 .task-table {
   flex: 1;
   min-height: 0;
+  flex-shrink: 1;
 }
 
 .status-ok {
@@ -180,7 +240,7 @@ body,
 .options-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px 18px;
   align-items: center;
 }
 
@@ -189,12 +249,14 @@ body,
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 28px;
 }
 
 .opt-item .label {
   color: var(--app-fg-secondary);
   font-size: 13px;
   white-space: nowrap;
+  min-width: 3.5em;
 }
 
 .hint-inline {
@@ -206,7 +268,7 @@ body,
 .path-text {
   font-size: 13px;
   color: var(--app-fg-secondary);
-  max-width: min(420px, 36vw);
+  max-width: min(360px, 32vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -244,8 +306,8 @@ body,
   gap: 10px;
   font-size: 13px;
   color: var(--app-fg-secondary);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .update-body {
@@ -300,4 +362,17 @@ body,
   font-weight: 400;
   color: var(--app-fg-muted);
   font-size: 12px;
+}
+
+/* 任务表在工作区内吃满剩余高度 */
+.workspace .task-table.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* 表格空态更轻 */
+.el-table__empty-text {
+  color: var(--app-fg-muted);
 }

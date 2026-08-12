@@ -91,40 +91,49 @@ const emit = defineEmits<{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .toolbar-left {
   flex: 0 1 auto;
+  gap: 10px;
 }
 
 .toolbar-spacer {
   flex: 1 1 12px;
-  min-width: 12px;
+  min-width: 8px;
 }
 
 .toolbar-right {
   flex: 0 1 auto;
   justify-content: flex-end;
+  gap: 12px;
 }
 
 .toolbar-error {
   font-size: 12px;
-  max-width: 220px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.toolbar-actions {
+  gap: 8px;
+}
+
 .toolbar-meta {
   gap: 8px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border-dashed);
+  padding-left: 12px;
+  border-left: 1px solid var(--panel-border);
 }
 
 .path-text {
   min-width: 0;
-  flex: 0 1 280px;
+  flex: 0 1 260px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
 }
 </style>

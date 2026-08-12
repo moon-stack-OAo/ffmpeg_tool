@@ -11,17 +11,19 @@ defineProps<{
 
 <template>
   <div v-if="count > 0" class="panel summary-bar">
-    <span>
-      已完成 {{ count }} 个 · 总原始
-      <b>{{ formatFileSize(totalIn) }}</b>
-      → 总输出
-      <b>{{ formatFileSize(totalOut) }}</b>
+    <span class="summary-main">
+      已完成 <b>{{ count }}</b> 个
+      <span class="summary-sep">·</span>
+      原始 <b>{{ formatFileSize(totalIn) }}</b>
+      <span class="summary-arrow">→</span>
+      输出 <b>{{ formatFileSize(totalOut) }}</b>
     </span>
     <span
       v-if="ratio"
       :class="ratio.startsWith('-') ? 'save-good' : 'save-bad'"
+      class="summary-ratio"
     >
-      总体积变化 {{ ratio }}
+      体积变化 {{ ratio }}
     </span>
   </div>
 </template>

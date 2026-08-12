@@ -47,11 +47,13 @@ async function copyCommand(): Promise<void> {
 </script>
 
 <template>
-  <div class="panel main task-table">
+  <div class="panel task-table">
     <div class="panel-title">
-      <span>任务列表（{{ tasks.length }}）</span>
+      <span>任务列表</span>
+      <span class="muted">共 {{ tasks.length }} 项</span>
     </div>
 
+    <div class="task-table-body">
     <el-table :data="tasks" empty-text="暂无任务，请添加视频" height="100%" stripe>
       <el-table-column label="文件名" min-width="150" prop="fileName" show-overflow-tooltip />
       <el-table-column label="模式" width="64">
@@ -108,12 +110,12 @@ async function copyCommand(): Promise<void> {
       </el-table-column>
       <el-table-column label="时间/速度" width="140">
         <template #default="{ row }">
-          <span style="font-size: 12px; color: #606266">
+          <span class="meta-text">
             {{ row.time || '-' }}
             <template v-if="row.speed"> / {{ row.speed }}</template>
             <template v-if="row.status === 'running' && row.etaSec != null">
               <br />
-              <span style="color: #909399">{{ formatEta(row.etaSec) }}</span>
+              <span class="meta-muted">{{ formatEta(row.etaSec) }}</span>
             </template>
           </span>
         </template>
@@ -124,11 +126,11 @@ async function copyCommand(): Promise<void> {
           <span
             v-else-if="row.status === 'completed'"
             :title="row.resolvedEncoder"
-            style="font-size: 12px; color: #67c23a"
+            class="meta-ok"
           >
             完成{{ row.resolvedEncoder ? ` · ${row.resolvedEncoder}` : '' }}
           </span>
-          <span v-else style="font-size: 12px; color: #c0c4cc">—</span>
+          <span v-else class="meta-muted">—</span>
         </template>
       </el-table-column>
       <el-table-column fixed="right" label="操作" width="250">
@@ -168,6 +170,7 @@ async function copyCommand(): Promise<void> {
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-drawer
       v-model="detailVisible"
@@ -222,40 +225,74 @@ async function copyCommand(): Promise<void> {
 </template>
 
 <style scoped>
+.task-table {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.task-table-body {
+  flex: 1;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+.meta-text {
+  font-size: 12px;
+  color: var(--app-fg-secondary);
+}
+
+.meta-muted {
+  font-size: 12px;
+  color: var(--app-fg-muted);
+}
+
+.meta-ok {
+  font-size: 12px;
+  color: var(--status-ok);
+}
+
 .detail-block {
   margin-bottom: 16px;
 }
+
 .detail-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--app-fg-muted);
   margin-bottom: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .detail-value {
   font-size: 13px;
-  color: #303133;
+  color: var(--app-fg);
   word-break: break-all;
 }
+
 .detail-pre {
   margin: 0;
   padding: 8px 10px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  background: var(--notes-bg);
+  border-radius: 6px;
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 200px;
   overflow: auto;
+  color: var(--app-fg-secondary);
 }
+
 .detail-pre.mono,
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
 .detail-pre.err {
-  color: #f56c6c;
-  background: #fef0f0;
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 12%, transparent);
 }
 </style>

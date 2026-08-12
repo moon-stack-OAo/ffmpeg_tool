@@ -430,22 +430,28 @@ async function onResetSettings(): Promise<void> {
         @two-pass-change="onTwoPassChange"
     />
 
-    <DropZone :dragging="dragging" @click="onSelectFiles"/>
+    <div class="workspace">
+      <DropZone
+          :compact="tasks.length > 0"
+          :dragging="dragging"
+          @click="onSelectFiles"
+      />
 
-    <SizeSummaryBar
-        :count="sizeSummary.count"
-        :ratio="sizeSummary.ratio"
-        :total-in="sizeSummary.totalIn"
-        :total-out="sizeSummary.totalOut"
-    />
+      <SizeSummaryBar
+          :count="sizeSummary.count"
+          :ratio="sizeSummary.ratio"
+          :total-in="sizeSummary.totalIn"
+          :total-out="sizeSummary.totalOut"
+      />
 
-    <TaskTable
-        :tasks="tasks"
-        @cancel-one="cancelOne"
-        @open-output="openOutput"
-        @remove-one="removeOne"
-        @show-in-folder="showInFolder"
-        @start-one="startOne"
-    />
+      <TaskTable
+          :tasks="tasks"
+          @cancel-one="cancelOne"
+          @open-output="openOutput"
+          @remove-one="removeOne"
+          @show-in-folder="showInFolder"
+          @start-one="startOne"
+      />
+    </div>
   </div>
 </template>

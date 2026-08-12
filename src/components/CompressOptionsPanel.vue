@@ -344,7 +344,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
                 :value="opt.value"
               />
             </el-select>
-            <span class="hint-inline">画面转 90°，竖屏变横屏</span>
+            <span class="hint-inline">90° 竖→横；180° 上下颠倒</span>
           </div>
 
           <template v-if="!isAudioMode">

@@ -101,16 +101,17 @@ export interface CompressOptions {
   /** 裁剪结束秒，可选；0/undefined 表示到结尾 */
   trimEnd?: number
   /**
-   * 画面旋转 90°（竖屏转横屏）
+   * 画面旋转
    * - none / undefined：不旋转
-   * - cw：顺时针 90°
-   * - ccw：逆时针 90°
+   * - cw：顺时针 90°（竖→横）
+   * - ccw：逆时针 90°（竖→横）
+   * - 180：旋转 180°
    */
   rotate90?: Rotate90
 }
 
-/** 画面旋转 90° 方向 */
-export type Rotate90 = 'none' | 'cw' | 'ccw'
+/** 画面旋转方向 */
+export type Rotate90 = 'none' | 'cw' | 'ccw' | '180'
 
 /** 旋转选项（任务选项 UI） */
 export const ROTATE90_OPTIONS: ReadonlyArray<{
@@ -119,7 +120,8 @@ export const ROTATE90_OPTIONS: ReadonlyArray<{
 }> = [
   { value: 'none', label: '不旋转' },
   { value: 'cw', label: '顺时针 90°（竖→横）' },
-  { value: 'ccw', label: '逆时针 90°（竖→横）' }
+  { value: 'ccw', label: '逆时针 90°（竖→横）' },
+  { value: '180', label: '旋转 180°' }
 ]
 
 /** 预设定义 */

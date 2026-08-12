@@ -269,14 +269,17 @@ export function buildScaleFilter(maxEdge: number): string | null {
 }
 
 /**
- * 构建旋转滤镜（画面转 90°，竖屏→横屏）
- * transpose=1 顺时针；transpose=2 逆时针
+ * 构建旋转滤镜
+ * - cw：transpose=1 顺时针 90°
+ * - ccw：transpose=2 逆时针 90°
+ * - 180：hflip,vflip（等价 180°）
  */
 export function buildRotateFilter(
   rotate90: CompressOptions['rotate90']
 ): string | null {
   if (rotate90 === 'cw') return 'transpose=1'
   if (rotate90 === 'ccw') return 'transpose=2'
+  if (rotate90 === '180') return 'hflip,vflip'
   return null
 }
 

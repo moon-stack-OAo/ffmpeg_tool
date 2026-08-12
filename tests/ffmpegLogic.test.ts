@@ -121,6 +121,13 @@ describe('buildCompressArgs', () => {
     expect(args[vfIdx + 1]).toBe('transpose=2')
   })
 
+  it('rotate90=180 时包含 hflip,vflip', () => {
+    const args = buildCompressArgs(baseOptions({ rotate90: '180' }), 'libx264')
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe('hflip,vflip')
+  })
+
   it('旋转 + 缩放：先 transpose 再 scale', () => {
     const args = buildCompressArgs(
       baseOptions({ rotate90: 'cw', maxEdge: 1280 }),

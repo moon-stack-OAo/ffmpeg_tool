@@ -92,7 +92,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
         ? trimEnd.value
         : undefined
     const rotate =
-      rotate90.value === 'cw' || rotate90.value === 'ccw'
+      rotate90.value === 'cw' ||
+      rotate90.value === 'ccw' ||
+      rotate90.value === '180'
         ? rotate90.value
         : undefined
     const target =
@@ -417,7 +419,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
   }
 
   function onRotate90Change(v: Rotate90): void {
-    rotate90.value = v === 'cw' || v === 'ccw' ? v : 'none'
+    rotate90.value =
+      v === 'cw' || v === 'ccw' || v === '180' ? v : 'none'
     options.onOptionsChange?.()
   }
 

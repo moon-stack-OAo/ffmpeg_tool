@@ -373,8 +373,13 @@ export const IpcChannels = {
   /** 主 → 渲染：窗口最大化状态变化 */
   WINDOW_MAXIMIZED_CHANGED: 'window:maximized-changed',
   /** 主 → 渲染：需要用户选择关闭方式 */
-  WINDOW_CLOSE_ASK: 'window:close-ask'
+  WINDOW_CLOSE_ASK: 'window:close-ask',
+  /** 主 → 渲染：托盘菜单指令 */
+  TRAY_COMMAND: 'tray:command'
 } as const
+
+/** 托盘菜单发给渲染进程的指令 */
+export type TrayCommand = 'check-update' | 'open-settings'
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
 
@@ -625,6 +630,8 @@ export interface ElectronAPI {
   onWindowMaximizedChanged: (callback: (maximized: boolean) => void) => () => void
   /** 订阅关闭询问（需弹窗） */
   onWindowCloseAsk: (callback: () => void) => () => void
+  /** 订阅托盘菜单指令 */
+  onTrayCommand: (callback: (cmd: TrayCommand) => void) => () => void
 }
 
 declare global {

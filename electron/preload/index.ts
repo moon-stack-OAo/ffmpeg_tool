@@ -5,6 +5,7 @@ import type {
   ElectronAPI,
   ProgressPayload,
   TaskEndPayload,
+  TrayCommand,
   UpdateStatusPayload
 } from '../../shared/types'
 import { IpcChannels } from '../../shared/types'
@@ -322,6 +323,18 @@ const api: ElectronAPI = {
     ipcRenderer.on(IpcChannels.WINDOW_CLOSE_ASK, handler)
     return () => {
       ipcRenderer.removeListener(IpcChannels.WINDOW_CLOSE_ASK, handler)
+    }
+  },
+
+  onTrayCommand: (callback) => {
+    const handler = (_event: IpcRendererEvent, cmd: TrayCommand): void => {
+      if (cmd === 'check-update' || cmd === 'open-settings') {
+        callback(cmd)
+      }
+    }
+    ipcRenderer.on(IpcChannels.TRAY_COMMAND, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.TRAY_COMMAND, handler)
     }
   }
 }

@@ -132,10 +132,6 @@ body,
   margin: 0 calc(-1 * var(--space-page)) 0;
 }
 
-.page > .toolbar {
-  margin-top: 0;
-}
-
 .page.page-dragging {
   outline: 2px dashed var(--primary);
   outline-offset: -6px;
@@ -148,25 +144,6 @@ body,
   display: flex;
   flex-direction: column;
   gap: var(--space-gap);
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px var(--space-3);
-  align-items: center;
-  background: var(--panel-bg);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 10px var(--space-page);
-  box-shadow: var(--ring), var(--panel-shadow);
-  flex-shrink: 0;
-}
-
-.toolbar .label {
-  color: var(--app-fg-secondary);
-  font-size: var(--fs-md);
-  white-space: nowrap;
 }
 
 .drop-zone {
@@ -345,9 +322,10 @@ body,
   color: var(--app-fg);
 }
 
-/* 任务选项面板：略收紧标题与内容间距 */
-.options-panel .panel-title {
-  margin-bottom: var(--space-3);
+/* 任务选项：承接原工具栏区域，略紧凑 */
+.options-panel.panel {
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
 .task-table {
@@ -378,8 +356,10 @@ body,
 .opt-item .label {
   color: var(--app-fg-secondary);
   font-size: var(--fs-md);
+  font-weight: 500;
   white-space: nowrap;
-  min-width: 3.5em;
+  min-width: 4em;
+  flex-shrink: 0;
 }
 
 .hint-inline {
@@ -391,16 +371,11 @@ body,
 .path-text {
   font-size: var(--fs-md);
   color: var(--app-fg-secondary);
-  max-width: min(260px, 28vw);
+  max-width: min(280px, 32vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.toolbar .path-text {
   min-width: 0;
-  flex: 0 1 260px;
-  max-width: min(260px, 28vw);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--app-fg) var(--overlay-subtle), transparent);
@@ -408,24 +383,14 @@ body,
 
 /* 断点：900 / 720 */
 @media (max-width: 900px) {
-  .path-text,
-  .toolbar .path-text {
-    max-width: min(160px, 22vw);
-  }
-
-  .toolbar .path-text {
-    flex-basis: 160px;
+  .path-text {
+    max-width: min(180px, 24vw);
   }
 }
 
 @media (max-width: 720px) {
-  .path-text,
-  .toolbar .path-text {
-    max-width: min(120px, 18vw);
-  }
-
-  .toolbar .path-text {
-    flex-basis: 120px;
+  .path-text {
+    max-width: min(140px, 20vw);
   }
 }
 
@@ -618,43 +583,16 @@ html.dark .el-drawer {
   flex: 1 1 auto;
 }
 
-/* 表格：去掉原生外框，改用自定义 ring */
+/* 任务表格：保留 Element Plus 默认表格线，仅做主题色微调 */
 .task-table .el-table {
-  --el-table-border-color: color-mix(in srgb, var(--panel-border) 85%, transparent);
+  --el-table-border-color: var(--panel-border);
   --el-table-header-bg-color: color-mix(in srgb, var(--app-fg) 3%, var(--panel-bg));
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--app-fg) 4%, var(--panel-bg));
   background: transparent;
-  border: none !important;
   border-radius: var(--radius-xs);
-  box-shadow: var(--ring-soft);
   overflow: hidden;
-}
-
-.task-table .el-table::before,
-.task-table .el-table::after,
-.task-table .el-table__inner-wrapper::before {
-  display: none !important;
-}
-
-.task-table .el-table__border-left-patch,
-.task-table .el-table--border::after,
-.task-table .el-table--border::before {
-  display: none !important;
-}
-
-.task-table .el-table th.el-table__cell {
-  border-bottom: none !important;
-  box-shadow: inset 0 -1px 0 0 var(--el-table-border-color);
-}
-
-.task-table .el-table td.el-table__cell {
-  border-bottom: none !important;
-  box-shadow: inset 0 -1px 0 0 color-mix(in srgb, var(--panel-border) 55%, transparent);
-}
-
-.task-table .el-table__row:last-child td.el-table__cell {
-  box-shadow: none;
 }
 
 /* 表格空态更轻 */

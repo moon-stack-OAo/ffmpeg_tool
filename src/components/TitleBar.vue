@@ -1,10 +1,22 @@
 <script lang="ts" setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Close, FullScreen, Minus, QuestionFilled, Setting } from '@element-plus/icons-vue'
+import type { FfmpegStatus } from '@shared/types'
 
-defineProps<{
+const props = defineProps<{
   appVersion: string
+  ffmpegStatus: FfmpegStatus
 }>()
+
+const ffmpegReady = computed(() => Boolean(props.ffmpegStatus?.ready))
+const ffmpegTip = computed(() => {
+  if (ffmpegReady.value) {
+    return props.ffmpegStatus.ffmpegPath
+      ? `FFmpeg 就绪\n${props.ffmpegStatus.ffmpegPath}`
+      : 'FFmpeg 就绪'
+  }
+  return props.ffmpegStatus?.error || 'FFmpeg 未就绪'
+})
 
 const emit = defineEmits<{
   openSettings: []
@@ -44,10 +56,20 @@ async function close(): Promise<void> {
 
 <template>
   <header class="title-bar" @dblclick="toggleMaximize">
-    <div class="title-bar-left">
+    <div class="title-bar-left" :title="`FFmpeg 视频压缩工具 v${appVersion}`">
       <img class="title-bar-icon" src="../favicon.png" alt="" draggable="false" />
-      <span class="title-bar-name">FFmpeg 视频压缩工具</span>
-      <span class="title-bar-ver">v{{ appVersion }}</span>
+      <div class="title-bar-text">
+        <span class="title-bar-name">FFmpeg 工具</span>
+        <span class="title-bar-ver">v{{ appVersion }}</span>
+      </div>
+      <span
+        class="title-bar-status"
+        :class="ffmpegReady ? 'is-ready' : 'is-bad'"
+        :title="ffmpegTip"
+      >
+        <span class="title-bar-status-dot" aria-hidden="true" />
+        {{ ffmpegReady ? 'FFmpeg 就绪' : 'FFmpeg 未就绪' }}
+      </span>
     </div>
 
     <div class="title-bar-drag" aria-hidden="true" />
@@ -103,36 +125,81 @@ async function close(): Promise<void> {
 .title-bar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 14px;
+  gap: 10px;
+  padding: 0 10px 0 12px;
   min-width: 0;
   -webkit-app-region: drag;
 }
 
 .title-bar-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
-  border-radius: 3px;
+  border-radius: 4px;
   pointer-events: none;
+}
+
+.title-bar-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .title-bar-name {
   font-size: var(--fs-md);
   font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--app-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .title-bar-ver {
   font-size: var(--fs-xs);
+  font-weight: 500;
   color: var(--app-fg-muted);
   flex-shrink: 0;
-  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  opacity: 0.9;
+}
+
+.title-bar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 2px 8px 2px 7px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--app-fg) var(--overlay-subtle), transparent);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-bar-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.title-bar-status.is-ready {
+  color: var(--el-color-success);
+  background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
+}
+
+.title-bar-status.is-bad {
+  color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--el-color-danger) 14%, transparent);
 }
 
 .title-bar-drag {

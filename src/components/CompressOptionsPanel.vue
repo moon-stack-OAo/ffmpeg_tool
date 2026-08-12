@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
+import { Folder } from '@element-plus/icons-vue'
 import {
   AUDIO_BITRATE_OPTIONS,
   AUDIO_FORMAT_OPTIONS,
@@ -29,6 +30,7 @@ defineProps<{
   concurrency: number
   nameTemplate: string
   nameTemplateCustom: boolean
+  outputDir: string
   outputDirMode: OutputDirMode
   targetSizeMb: number
   /** 目标体积时两遍编码 */
@@ -59,6 +61,7 @@ const emit = defineEmits<{
   nameTemplateChange: [v: string]
   customNameTemplateInput: [v: string]
   outputDirModeChange: [v: OutputDirMode]
+  selectOutput: []
   targetSizeMbChange: [v: number]
   twoPassChange: [v: boolean]
   trimStartChange: [v: number]
@@ -81,18 +84,18 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
 
 <template>
   <div class="panel options-panel">
-    <div class="panel-title">
-      <span>任务选项</span>
-      <div class="panel-title-right">
-        <span class="muted">
+    <div class="options-header">
+      <div class="options-header-left">
+        <span class="options-title">任务选项</span>
+        <span class="options-desc">
           {{ isAudioMode ? '仅抽取音频' : presetDescription }}
         </span>
-        <el-button size="small" @click="emit('applyToPending')">应用到待处理</el-button>
       </div>
+      <el-button size="small" @click="emit('applyToPending')">应用到待处理</el-button>
     </div>
 
-    <!-- 主选项：模式 + 预设/音频 + 输出，单层紧凑布局 -->
-    <div class="opt-grid">
+    <!-- 第一行：模式 / 预设（或音频参数） -->
+    <div class="opt-row">
       <div class="opt-item">
         <span class="label">任务模式</span>
         <el-radio-group
@@ -110,8 +113,10 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
         </el-radio-group>
       </div>
 
+      <div class="opt-divider" aria-hidden="true" />
+
       <template v-if="!isAudioMode">
-        <div class="opt-item opt-item-grow">
+        <div class="opt-item opt-item-fill">
           <span class="label">预设</span>
           <el-radio-group
             :model-value="presetId"
@@ -158,8 +163,11 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
           </el-select>
         </div>
       </template>
+    </div>
 
-      <div class="opt-item">
+    <!-- 第二行：输出位置 / 命名 -->
+    <div class="opt-row opt-row-output">
+      <div class="opt-item opt-output">
         <span class="label">输出位置</span>
         <el-select
           :model-value="outputDirMode"
@@ -174,11 +182,20 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
             :value="opt.value"
           />
         </el-select>
-        <span v-if="outputDirMode === 'sidecar'" class="hint-inline">与源文件同目录</span>
-        <span v-else-if="outputDirMode === 'dated'" class="hint-inline">outputDir/YYYYMMDD</span>
+        <template v-if="outputDirMode !== 'sidecar'">
+          <el-button :icon="Folder" size="small" @click="emit('selectOutput')">
+            选择目录
+          </el-button>
+          <span :title="outputDir || '未选择输出目录'" class="path-text output-path">
+            {{ outputDir || '未选择输出目录' }}
+          </span>
+        </template>
+        <span v-else class="hint-inline">与源文件同目录</span>
       </div>
 
-      <div class="opt-item opt-item-grow">
+      <div class="opt-divider" aria-hidden="true" />
+
+      <div class="opt-item opt-item-fill">
         <span class="label">输出命名</span>
         <el-select
           :model-value="nameSelectValue(nameTemplate, nameTemplateCustom)"
@@ -205,7 +222,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
     </div>
 
     <!-- 高级：编码 / 裁剪 / 体积 / 自定义 -->
-    <div class="opt-advanced">
+    <div class="opt-advanced" :class="{ open: advancedOpen }">
       <button
         type="button"
         class="opt-advanced-toggle"
@@ -219,7 +236,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
       </button>
 
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
-        <div class="opt-grid">
+        <div class="opt-row opt-row-wrap">
           <template v-if="!isAudioMode">
             <div class="opt-item">
               <span class="label">编码器</span>
@@ -372,37 +389,90 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
 </template>
 
 <style scoped>
-.panel-title-right {
+.options-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 10px;
   min-width: 0;
 }
 
-/* 主选项网格：自动换行，宽屏多列 */
-.opt-grid {
+.options-header-left {
   display: flex;
-  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.options-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--app-fg);
+  white-space: nowrap;
+}
+
+.options-desc {
+  font-size: var(--fs-sm);
+  color: var(--app-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opt-row {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
+  gap: 12px 14px;
+  min-width: 0;
 }
 
-.opt-grid > .opt-item {
-  margin: 0;
+.opt-row + .opt-row {
+  margin-top: 10px;
+  padding-top: 10px;
+  box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
 }
 
-.opt-item-grow {
+.opt-row-wrap {
+  flex-wrap: wrap;
+}
+
+.opt-divider {
+  width: 1px;
+  height: 22px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--panel-border) 90%, transparent);
+}
+
+.opt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+  min-height: 28px;
+  min-width: 0;
+}
+
+.opt-item-fill {
   flex: 1 1 auto;
-  min-width: min(100%, 280px);
+}
+
+.opt-output {
+  flex: 1 1 42%;
+  min-width: 0;
+}
+
+.opt-output .output-path {
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 420px;
 }
 
 .opt-advanced {
-  margin-top: var(--space-3);
-  border-top: none;
-  box-shadow: inset 0 1px 0 0 var(--panel-border);
-  padding-top: var(--space-2);
+  margin-top: 10px;
+  padding-top: 6px;
+  box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
 }
 
 .opt-advanced-toggle {
@@ -411,7 +481,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
   gap: var(--space-2);
   width: 100%;
   margin: 0;
-  padding: 6px var(--space-2);
+  padding: 6px 8px;
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -420,7 +490,9 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .opt-advanced-toggle:hover {
@@ -453,10 +525,25 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
 }
 
 .opt-advanced-body {
-  padding: var(--space-2) 0 2px;
+  padding: 10px 0 2px;
 }
 
 .name-template-input {
-  margin-left: var(--space-2);
+  min-width: 140px;
+}
+
+@media (max-width: 1100px) {
+  .opt-row {
+    flex-wrap: wrap;
+  }
+
+  .opt-divider {
+    display: none;
+  }
+
+  .opt-output,
+  .opt-item-fill {
+    flex: 1 1 100%;
+  }
 }
 </style>

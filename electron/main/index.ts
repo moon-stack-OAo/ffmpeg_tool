@@ -64,29 +64,69 @@ function quitApp(): void {
   app.quit()
 }
 
+/** 托盘优先用小尺寸图标，避免 Windows 托盘模糊/过大 */
+function resolveTrayIcon(): Electron.NativeImage {
+  const candidates = [
+    join(__dirname, '../../resources/icon-16.png'),
+    join(__dirname, '../../resources/icon-24.png'),
+    join(__dirname, '../../resources/icon-32.png'),
+    join(__dirname, '../../build/icon.png'),
+    join(__dirname, '../../resources/icon.png'),
+    join(__dirname, '../../build/icon.ico'),
+    join(__dirname, '../../resources/icon.ico')
+  ]
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    const img = nativeImage.createFromPath(p)
+    if (!img.isEmpty()) {
+      // Windows 托盘约 16px；过大时缩放到 16 更清晰
+      if (img.getSize().width > 32) {
+        return img.resize({ width: 16, height: 16, quality: 'best' })
+      }
+      return img
+    }
+  }
+  return nativeImage.createEmpty()
+}
+
+function sendTrayCommand(cmd: 'check-update' | 'open-settings'): void {
+  showMainWindow()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IpcChannels.TRAY_COMMAND, cmd)
+  }
+}
+
+function buildTrayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    {
+      label: '打开主窗口',
+      click: () => showMainWindow()
+    },
+    {
+      label: '检查更新',
+      click: () => sendTrayCommand('check-update')
+    },
+    {
+      label: '打开设置',
+      click: () => sendTrayCommand('open-settings')
+    },
+    { type: 'separator' },
+    {
+      label: '退出应用',
+      click: () => quitApp()
+    }
+  ])
+}
+
 function ensureTray(): void {
   if (tray) return
-  const iconPath = resolveWindowIcon()
-  const image = iconPath
-    ? nativeImage.createFromPath(iconPath)
-    : nativeImage.createEmpty()
-  tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image)
-  tray.setToolTip('FFmpeg 视频压缩工具')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: '显示主窗口',
-        click: () => showMainWindow()
-      },
-      { type: 'separator' },
-      {
-        label: '退出',
-        click: () => quitApp()
-      }
-    ])
-  )
-  tray.on('double-click', () => showMainWindow())
+  const image = resolveTrayIcon()
+  tray = new Tray(image)
+  tray.setToolTip(`FFmpeg 视频压缩工具 v${app.getVersion()}`)
+  tray.setContextMenu(buildTrayMenu())
+  // Windows：左键打开主窗口，右键系统菜单
   tray.on('click', () => showMainWindow())
+  tray.on('double-click', () => showMainWindow())
 }
 
 function handleCloseRequest(): void {

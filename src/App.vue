@@ -2,7 +2,6 @@
 import {onMounted, onUnmounted, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import type {AppInfo} from '@shared/types'
-import AppToolbar from './components/AppToolbar.vue'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import DropZone from './components/DropZone.vue'
@@ -156,6 +155,7 @@ let cleanupUpdater: (() => void) | undefined
 let cleanupDrag: (() => void) | undefined
 let cleanupHotkeys: (() => void) | undefined
 let cleanupCloseAsk: (() => void) | undefined
+let cleanupTray: (() => void) | undefined
 
 onMounted(async () => {
   // 1) 恢复持久化设置
@@ -212,6 +212,13 @@ onMounted(async () => {
   cleanupCloseAsk = window.electronAPI.onWindowCloseAsk(() => {
     closeConfirmVisible.value = true
   })
+  cleanupTray = window.electronAPI.onTrayCommand((cmd) => {
+    if (cmd === 'check-update') {
+      void onCheckUpdate()
+    } else if (cmd === 'open-settings') {
+      settingsVisible.value = true
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -222,6 +229,7 @@ onUnmounted(() => {
   cleanupDrag?.()
   cleanupHotkeys?.()
   cleanupCloseAsk?.()
+  cleanupTray?.()
 })
 
 async function onCloseDecide(
@@ -365,22 +373,9 @@ async function onResetSettings(): Promise<void> {
   >
     <TitleBar
         :app-version="appVersion"
+        :ffmpeg-status="ffmpegStatus"
         @open-settings="settingsVisible = true"
         @show-shortcuts="shortcutHelpVisible = true"
-    />
-
-    <AppToolbar
-        :ffmpeg-status="ffmpegStatus"
-        :has-active="hasActive"
-        :has-pending="hasPending"
-        :output-dir="outputDir"
-        :task-count="tasks.length"
-        @cancel-all="cancelAll"
-        @clear-all="clearAll"
-        @clear-finished="clearFinished"
-        @select-files="onSelectFiles"
-        @select-output="onSelectOutput"
-        @start-all="startAll"
     />
 
     <SettingsDrawer
@@ -443,6 +438,7 @@ async function onResetSettings(): Promise<void> {
         :is-webm="isWebm"
         :name-template="nameTemplate"
         :name-template-custom="nameTemplateCustom"
+        :output-dir="outputDir"
         :output-dir-mode="outputDirMode"
         :preset-description="currentPreset.description"
         :preset-id="presetId"
@@ -460,6 +456,7 @@ async function onResetSettings(): Promise<void> {
         @name-template-change="onNameTemplateChange"
         @output-dir-mode-change="onOutputDirModeChange"
         @preset-change="onPresetChange"
+        @select-output="onSelectOutput"
         @target-size-mb-change="onTargetSizeMbChange"
         @task-mode-change="onTaskModeChange"
         @trim-end-change="onTrimEndChange"
@@ -482,11 +479,17 @@ async function onResetSettings(): Promise<void> {
       />
 
       <TaskTable
+          :has-active="hasActive"
+          :has-pending="hasPending"
           :tasks="tasks"
+          @cancel-all="cancelAll"
           @cancel-one="cancelOne"
+          @clear-all="clearAll"
+          @clear-finished="clearFinished"
           @open-output="openOutput"
           @remove-one="removeOne"
           @show-in-folder="showInFolder"
+          @start-all="startAll"
           @start-one="startOne"
       />
     </div>

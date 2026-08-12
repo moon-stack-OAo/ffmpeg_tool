@@ -13,6 +13,8 @@ import {
 
 defineProps<{
   tasks: CompressTask[]
+  hasPending: boolean
+  hasActive: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +23,10 @@ const emit = defineEmits<{
   removeOne: [taskId: string]
   openOutput: [task: CompressTask]
   showInFolder: [task: CompressTask]
+  startAll: []
+  cancelAll: []
+  clearFinished: []
+  clearAll: []
 }>()
 
 /** 任务模式简写 */
@@ -57,8 +63,32 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 <template>
   <div class="panel task-table">
     <div class="panel-title">
-      <span>任务列表</span>
-      <span class="muted">共 {{ tasks.length }} 项</span>
+      <div class="panel-title-left">
+        <span>任务列表</span>
+        <span class="muted">共 {{ tasks.length }} 项</span>
+      </div>
+      <div class="panel-title-actions">
+        <el-button
+          :disabled="!hasPending && !tasks.length"
+          size="small"
+          type="success"
+          @click="emit('startAll')"
+        >
+          全部开始
+        </el-button>
+        <el-button
+          :disabled="!hasActive"
+          size="small"
+          type="warning"
+          @click="emit('cancelAll')"
+        >
+          全部取消
+        </el-button>
+        <el-button size="small" @click="emit('clearFinished')">清除已完成</el-button>
+        <el-button plain size="small" type="danger" @click="emit('clearAll')">
+          清空列表
+        </el-button>
+      </div>
     </div>
 
     <div class="task-table-body">
@@ -252,6 +282,22 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 </template>
 
 <style scoped>
+.panel-title-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.panel-title-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .task-table {
   flex: 1;
   min-height: 0;

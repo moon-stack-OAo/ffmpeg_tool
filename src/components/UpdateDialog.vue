@@ -68,6 +68,29 @@ const showNewBadge = computed(
         state.value === 'downloaded'
 )
 
+/** 无版本对比时的空态（已最新 / 检查中 / 失败 / 开发模式等） */
+const isIdleLayout = computed(() => !showVersionCompare.value)
+
+const idleTitle = computed(() => {
+  switch (state.value) {
+    case 'checking':
+      return '正在检查更新'
+    case 'not-available':
+      return '已是最新版本'
+    case 'error':
+      return '检查更新失败'
+    default:
+      return !props.isPackaged ? '开发模式' : '软件更新'
+  }
+})
+
+const idleHint = computed(() => {
+  if (props.updateInfo.message) return props.updateInfo.message
+  if (!props.isPackaged) return '开发模式不检查更新，请使用打包后的安装包验证'
+  if (state.value === 'checking') return '正在连接更新服务器…'
+  return '点击下方按钮检查是否有新版本'
+})
+
 const downloadPercent = computed(() =>
     Math.min(100, Math.max(0, Math.round(props.updateInfo.percent || 0)))
 )
@@ -190,7 +213,7 @@ function inlineHtml(text: string): string {
       :model-value="modelValue"
       :close-on-click-modal="false"
       class="update-dialog"
-      width="min(640px, 94vw)"
+      width="min(760px, 96vw)"
       append-to-body
       destroy-on-close
       align-center
@@ -221,74 +244,84 @@ function inlineHtml(text: string): string {
       </div>
     </template>
 
-    <div class="update-body">
-      <div v-if="showVersionCompare" class="update-version-row">
-        <div class="ver-card">
-          <span class="ver-label">当前版本</span>
-          <span class="ver-num">v{{ appVersion }}</span>
+    <div class="update-body" :class="{ 'is-idle': isIdleLayout }">
+      <template v-if="showVersionCompare">
+        <div class="update-version-row">
+          <div class="ver-card">
+            <span class="ver-label">当前版本</span>
+            <span class="ver-num">v{{ appVersion }}</span>
+          </div>
+          <div class="ver-arrow" aria-hidden="true">
+            <span class="ver-arrow-line" />
+            <span class="ver-arrow-head">›</span>
+          </div>
+          <div class="ver-card is-new">
+            <span class="ver-label">
+              最新版本
+              <span class="ver-new-tag">NEW</span>
+            </span>
+            <span class="ver-num">v{{ updateInfo.version }}</span>
+          </div>
         </div>
-        <div class="ver-arrow" aria-hidden="true">
-          <span class="ver-arrow-line"/>
-          <span class="ver-arrow-head">›</span>
-        </div>
-        <div class="ver-card is-new">
-          <span class="ver-label">
-            最新版本
-            <span class="ver-new-tag">NEW</span>
-          </span>
-          <span class="ver-num">v{{ updateInfo.version }}</span>
-        </div>
-      </div>
 
-      <div v-else class="update-current-only">
-        <span class="update-current-label">当前版本</span>
-        <span class="update-current-num">v{{ appVersion }}</span>
-        <span v-if="!isPackaged" class="update-dev">开发模式</span>
-      </div>
-
-      <div
-        v-if="updateInfo.message"
-        class="update-msg"
-        :class="{
-          'is-error': state === 'error',
-          'is-ok': state === 'not-available' || state === 'downloaded',
-          'is-dev': !isPackaged && state !== 'error'
-        }"
-      >
-        {{ updateInfo.message }}
-      </div>
-
-      <div v-if="state === 'downloading'" class="update-progress">
-        <div class="update-progress-top">
-          <span>下载进度</span>
-          <span class="update-progress-pct">{{ downloadPercent }}%</span>
+        <div
+          v-if="updateInfo.message"
+          class="update-msg"
+          :class="{
+            'is-error': state === 'error',
+            'is-ok': state === 'downloaded'
+          }"
+        >
+          {{ updateInfo.message }}
         </div>
-        <div class="update-progress-track">
-          <div class="update-progress-fill" :style="{ width: `${downloadPercent}%` }"/>
-        </div>
-        <div v-if="downloadDetail" class="update-progress-meta">{{ downloadDetail }}</div>
-      </div>
 
-      <div v-if="notesBlocks.length" class="update-notes">
-        <div class="update-notes-title">更新内容</div>
-        <div class="update-notes-scroll thin-scrollbar">
-          <template v-for="(block, i) in notesBlocks" :key="i">
-            <div
+        <div v-if="state === 'downloading'" class="update-progress">
+          <div class="update-progress-top">
+            <span>下载进度</span>
+            <span class="update-progress-pct">{{ downloadPercent }}%</span>
+          </div>
+          <div class="update-progress-track">
+            <div class="update-progress-fill" :style="{ width: `${downloadPercent}%` }" />
+          </div>
+          <div v-if="downloadDetail" class="update-progress-meta">{{ downloadDetail }}</div>
+        </div>
+
+        <div v-if="notesBlocks.length" class="update-notes">
+          <div class="update-notes-title">更新内容</div>
+          <div class="update-notes-scroll thin-scrollbar">
+            <template v-for="(block, i) in notesBlocks" :key="i">
+              <div
                 v-if="block.type === 'h'"
                 class="notes-h"
                 :class="`notes-h${block.level}`"
                 v-html="inlineHtml(block.text)"
-            />
-            <p
+              />
+              <p
                 v-else-if="block.type === 'p'"
                 class="notes-p"
                 v-html="inlineHtml(block.text)"
-            />
-            <ul v-else-if="block.type === 'ul'" class="notes-ul">
-              <li v-for="(item, j) in block.items" :key="j" v-html="inlineHtml(item)"/>
-            </ul>
-          </template>
+              />
+              <ul v-else-if="block.type === 'ul'" class="notes-ul">
+                <li v-for="(item, j) in block.items" :key="j" v-html="inlineHtml(item)" />
+              </ul>
+            </template>
+          </div>
         </div>
+      </template>
+
+      <div v-else class="update-idle" :class="`is-${statusMeta.type}`">
+        <div class="update-idle-icon" aria-hidden="true">
+          <el-icon :size="28" :class="{ 'update-status-spin': state === 'checking' }">
+            <component :is="statusMeta.icon" />
+          </el-icon>
+        </div>
+        <div class="update-idle-title">{{ idleTitle }}</div>
+        <div class="update-idle-ver">
+          <span class="update-idle-ver-label">当前版本</span>
+          <span class="update-idle-ver-num">v{{ appVersion }}</span>
+          <span v-if="!isPackaged" class="update-dev">开发模式</span>
+        </div>
+        <p class="update-idle-hint">{{ idleHint }}</p>
       </div>
     </div>
 
@@ -423,10 +456,15 @@ function inlineHtml(text: string): string {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: min(320px, 42vh);
+  min-height: min(280px, 36vh);
   font-size: var(--fs-md);
   color: var(--app-fg-secondary);
   line-height: 1.55;
+}
+
+.update-body.is-idle {
+  min-height: min(240px, 32vh);
+  justify-content: center;
 }
 
 .update-version-row {
@@ -519,28 +557,91 @@ function inlineHtml(text: string): string {
   font-weight: 600;
 }
 
-.update-current-only {
+.update-idle {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  padding: 18px 20px;
-  min-height: 72px;
-  border-radius: 12px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px 24px 24px;
+  border-radius: 14px;
   background: var(--notes-bg);
   box-shadow: var(--ring-soft);
 }
 
-.update-current-label {
+.update-idle-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+  background: color-mix(in srgb, var(--app-fg-muted) 12%, transparent);
+  color: var(--app-fg-secondary);
+}
+
+.update-idle.is-success .update-idle-icon {
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
+  color: var(--status-ok);
+}
+
+.update-idle.is-danger .update-idle-icon {
+  background: color-mix(in srgb, var(--status-bad) 16%, transparent);
+  color: var(--status-bad);
+}
+
+.update-idle.is-primary .update-idle-icon,
+.update-idle.is-info .update-idle-icon {
+  background: color-mix(in srgb, #0ea5e9 16%, transparent);
+  color: color-mix(in srgb, #0ea5e9 40%, var(--app-fg));
+}
+
+.update-idle-title {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--app-fg);
+  line-height: 1.3;
+}
+
+.update-idle-ver {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-fg) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-border) 85%, transparent);
+}
+
+.update-idle-ver-label {
   font-size: var(--fs-xs);
   color: var(--app-fg-muted);
 }
 
-.update-current-num {
-  font-size: var(--fs-lg);
+.update-idle-ver-num {
+  font-size: var(--fs-md);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--app-fg);
+}
+
+.update-idle-hint {
+  margin: 2px 0 0;
+  max-width: 36em;
+  font-size: var(--fs-sm);
+  color: var(--app-fg-muted);
+  line-height: 1.55;
+}
+
+.update-idle.is-success .update-idle-hint {
+  color: color-mix(in srgb, var(--status-ok) 55%, var(--app-fg-muted));
+}
+
+.update-idle.is-danger .update-idle-hint {
+  color: color-mix(in srgb, var(--status-bad) 60%, var(--app-fg-muted));
 }
 
 .update-dev {

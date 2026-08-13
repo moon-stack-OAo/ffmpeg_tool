@@ -12,7 +12,7 @@ export interface HotkeyHandlers {
   clearFinished: () => void
   /** 切换主题 light↔dark */
   toggleTheme: () => void
-  /** 显示快捷键帮助 */
+  /** 显示帮助（使用说明 + 快捷键） */
   showHelp: () => void
 }
 
@@ -46,7 +46,7 @@ export function subscribeHotkeys(handlers: HotkeyHandlers): () => void {
     const lower = key.length === 1 ? key.toLowerCase() : key
     const editable = isEditableTarget(e.target)
 
-    // F1 或 Ctrl+/ ：帮助（全局）
+    // F1 或 Ctrl+/ ：帮助中心（全局）
     if (key === 'F1' || (mod && (key === '/' || key === '?'))) {
       e.preventDefault()
       handlers.showHelp()

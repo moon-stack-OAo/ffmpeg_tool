@@ -528,34 +528,37 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
-/* 细滚动条（设置抽屉、更新说明等） */
+/* 细滚动条（设置抽屉、更新说明、帮助等） */
 .thin-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--app-fg-muted) 55%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, #0ea5e9 42%, var(--app-fg-muted)) transparent;
 }
 
 .thin-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 
 .thin-scrollbar::-webkit-scrollbar-track {
-  margin: 4px 0;
-  background: transparent;
+  margin: 6px 0;
+  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
   border-radius: 999px;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--app-fg-muted) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #1b4dff 55%, transparent),
+    color-mix(in srgb, #0ea5e9 65%, transparent),
+    color-mix(in srgb, #14b8a6 55%, transparent)
+  );
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 0 solid transparent;
   background-clip: padding-box;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--app-fg-muted) 68%, transparent);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: linear-gradient(180deg, #1b4dff, #0ea5e9, #14b8a6);
 }
 
 .thin-scrollbar::-webkit-scrollbar-corner {
@@ -576,27 +579,28 @@ body,
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-track {
-  margin: 4px 0;
-  background: transparent;
+  margin: 6px 0;
+  background: color-mix(in srgb, var(--app-fg) 4%, transparent);
   border-radius: 999px;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--app-fg-muted) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #1b4dff 55%, transparent),
+    color-mix(in srgb, #0ea5e9 65%, transparent),
+    color-mix(in srgb, #14b8a6 55%, transparent)
+  );
   border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--app-fg-muted) 68%, transparent);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: linear-gradient(180deg, #1b4dff, #0ea5e9, #14b8a6);
 }
 
 .settings-drawer .settings-tabs .el-tabs__content::-webkit-scrollbar-corner {

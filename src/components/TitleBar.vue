@@ -108,7 +108,7 @@ async function close(): Promise<void> {
       <button
         type="button"
         class="tb-btn"
-        title="快捷键 (F1)"
+        title="帮助 (F1)"
         @click="emit('showShortcuts')"
       >
         <el-icon :size="15"><QuestionFilled /></el-icon>

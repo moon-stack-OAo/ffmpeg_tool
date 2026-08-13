@@ -1,8 +1,10 @@
 # 轻影
 
-**版本：1.0.0** · 本地视频压缩与音频抽取
+本地视频压缩与音频抽取桌面应用。
 
-基于 **Electron + Vue 3 + TypeScript + Element Plus** 的桌面应用。  
+**版本说明**以 [CHANGELOG.md](./CHANGELOG.md) 为准（与 `package.json` 的 `version` 对齐）；README 不单独维护版本号。
+
+基于 **Electron + Vue 3 + TypeScript + Element Plus**。  
 通过内置 `ffmpeg-static` / `ffprobe-static` 调用 FFmpeg，无需系统预先安装 FFmpeg。
 
 ## 功能
@@ -99,6 +101,21 @@ npm run dist:mac
 - **VideoToolbox** 已接入：auto 在 darwin 优先 `h264_videotoolbox`（需本机探测/试编成功）
 - GitHub Actions 中 macOS 打包 job 默认关闭，配置签名与公证后再开启
 
+#### 未签名构建（当前）
+
+当前 macOS 为**未签名**构建，首次打开可能被系统拦截：
+
+1. **「无法验证开发者」**：在 Finder 中对 `轻影.app` / `qingying.app` **右键 → 打开**，再在提示中确认打开
+2. **「应用已损坏」**（常见于隔离属性 quarantine）：在终端执行（按实际安装路径修改）：
+
+```bash
+xattr -cr "/Applications/轻影.app"
+# 若应用名为 ASCII 产物名：
+# xattr -cr "/Applications/qingying.app"
+```
+
+完成签名与公证后，上述步骤通常不再需要。
+
 ## 目录结构
 
 ```
@@ -155,6 +172,7 @@ git push origin v1.0.0
 - 正式分发需 Apple 开发者证书与公证（Notarization）
 - 常见环境变量：`CSC_LINK` / `CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 等
 - 当前 Release 工作流以 Windows 为主，macOS 完整签名与公证链路尚未接入
+- **未签名包使用说明**见上文「构建与打包 → macOS 说明 → 未签名构建」
 
 ## 自动更新
 

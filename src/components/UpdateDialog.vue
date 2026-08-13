@@ -208,7 +208,10 @@ function inlineHtml(text: string): string {
               <span v-if="showNewBadge" class="update-new-pill">NEW</span>
             </div>
             <div class="update-brand-sub" :class="`is-${statusMeta.type}`">
-              <el-icon :size="13" :class="{ 'is-loading': state === 'checking' }">
+              <el-icon
+                :size="13"
+                :class="{ 'update-status-spin': state === 'checking' }"
+              >
                 <component :is="statusMeta.icon" />
               </el-icon>
               <span>{{ statusMeta.label }}</span>
@@ -730,11 +733,12 @@ function inlineHtml(text: string): string {
   vertical-align: middle;
 }
 
-.is-loading {
-  animation: update-spin 0.9s linear infinite;
+/* 仅标题状态图标旋转；勿用 is-loading，会与 el-button loading 类名冲突导致整钮旋转 */
+.update-status-spin {
+  animation: update-status-spin 0.9s linear infinite;
 }
 
-@keyframes update-spin {
+@keyframes update-status-spin {
   to {
     transform: rotate(360deg);
   }

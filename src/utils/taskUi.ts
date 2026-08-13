@@ -78,6 +78,15 @@ export function optionsSummary(task: CompressTask): string {
         o.twoPass === false ? '单遍估算' : '两遍优先（硬件自动单遍）'
       parts.push(`目标体积: 约 ${o.targetSizeMb} MB（${passLabel}）`)
     }
+    if (o.muteAudio) parts.push('音频: 静音')
+    else if (o.videoAudioBitrate && o.videoAudioBitrate !== '128k') {
+      parts.push(`音轨: ${o.videoAudioBitrate}`)
+    }
+    if (o.compatProfile === 'main-l4') parts.push('兼容: Main@L4')
+    if (o.compatProfile === 'high') parts.push('兼容: High')
+    if (o.fps && o.fps !== 'source') parts.push(`帧率: ${o.fps}`)
+    if (o.encodePreset === 'fast') parts.push('编码速度: 快速')
+    if (o.encodePreset === 'slow') parts.push('编码速度: 高质量')
   }
   if (o.trimStart && o.trimStart > 0) parts.push(`裁剪起: ${o.trimStart}s`)
   if (o.trimEnd && o.trimEnd > 0) parts.push(`裁剪止: ${o.trimEnd}s`)

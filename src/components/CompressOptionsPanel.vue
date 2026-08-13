@@ -5,12 +5,18 @@ import {
   AUDIO_BITRATE_OPTIONS,
   AUDIO_FORMAT_OPTIONS,
   type AudioFormat,
+  COMPAT_PROFILE_OPTIONS,
+  type CompatProfile,
   CONCURRENCY_HINT,
   CONCURRENCY_OPTIONS,
   DEFAULT_PRESETS,
+  ENCODE_PRESET_OPTIONS,
+  type EncodePreset,
   ENCODER_OPTIONS,
   type EncoderDetectResult,
   type EncoderId,
+  FPS_OPTIONS,
+  type FpsMode,
   NAME_TEMPLATE_OPTIONS,
   OUTPUT_DIR_MODE_OPTIONS,
   OUTPUT_FORMAT_OPTIONS,
@@ -48,6 +54,16 @@ defineProps<{
   trimEnd: number
   /** 画面旋转 90° */
   rotate90: Rotate90
+  /** 去掉音轨 */
+  muteAudio: boolean
+  /** H.264 兼容档 */
+  compatProfile: CompatProfile
+  /** 视频模式音轨码率 */
+  videoAudioBitrate: string
+  /** 输出帧率 */
+  fps: FpsMode
+  /** x264 编码速度 */
+  encodePreset: EncodePreset
   custom: {
     crf: number
     maxEdge: number
@@ -71,6 +87,11 @@ const emit = defineEmits<{
   trimStartChange: [v: number]
   trimEndChange: [v: number]
   rotate90Change: [v: Rotate90]
+  muteAudioChange: [v: boolean]
+  compatProfileChange: [v: CompatProfile]
+  videoAudioBitrateChange: [v: string]
+  fpsChange: [v: FpsMode]
+  encodePresetChange: [v: EncodePreset]
   applyToPending: []
 }>()
 
@@ -237,7 +258,7 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
       >
         <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
         <span>高级选项</span>
-        <span class="muted">编码器 · 并发 · 裁剪 · 旋转 · 目标体积</span>
+        <span class="muted">编码器 · 静音 · 兼容档 · 音轨 · 帧率 · 旋转 · 目标体积</span>
       </button>
 
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
@@ -277,6 +298,87 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
                 </template>
                 <template v-else>未检测到</template>
               </span>
+            </div>
+
+            <div class="opt-item">
+              <span class="label">静音</span>
+              <el-switch
+                :model-value="muteAudio"
+                size="small"
+                @change="(v: string | number | boolean) => emit('muteAudioChange', Boolean(v))"
+              />
+              <span class="hint-inline">去掉音轨</span>
+            </div>
+
+            <div class="opt-item">
+              <span class="label">兼容档</span>
+              <el-select
+                :disabled="isWebm"
+                :model-value="compatProfile"
+                size="small"
+                class="w-4xl"
+                @change="(v: CompatProfile) => emit('compatProfileChange', v)"
+              >
+                <el-option
+                  v-for="opt in COMPAT_PROFILE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <span class="hint-inline">{{ isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信' }}</span>
+            </div>
+
+            <div v-if="!muteAudio" class="opt-item">
+              <span class="label">音轨码率</span>
+              <el-select
+                :model-value="videoAudioBitrate"
+                size="small"
+                class="w-md"
+                @change="(v: string) => emit('videoAudioBitrateChange', v)"
+              >
+                <el-option
+                  v-for="br in AUDIO_BITRATE_OPTIONS"
+                  :key="br"
+                  :label="br"
+                  :value="br"
+                />
+              </el-select>
+            </div>
+
+            <div class="opt-item">
+              <span class="label">帧率</span>
+              <el-select
+                :model-value="fps"
+                size="small"
+                class="w-2xl"
+                @change="(v: FpsMode) => emit('fpsChange', v)"
+              >
+                <el-option
+                  v-for="opt in FPS_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+
+            <div class="opt-item">
+              <span class="label">编码速度</span>
+              <el-select
+                :model-value="encodePreset"
+                size="small"
+                class="w-2xl"
+                @change="(v: EncodePreset) => emit('encodePresetChange', v)"
+              >
+                <el-option
+                  v-for="opt in ENCODE_PRESET_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <span class="hint-inline">仅软件 x264 生效；越慢越好</span>
             </div>
           </template>
 

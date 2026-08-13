@@ -108,6 +108,21 @@ export interface CompressOptions {
    * - 180：旋转 180°
    */
   rotate90?: Rotate90
+  /** 去掉音轨；true 时输出 -an */
+  muteAudio?: boolean
+  /**
+   * H.264 兼容档
+   * - auto / undefined：不强制 profile/level
+   * - main-l4：Main@L4 + yuv420p
+   * - high：High + yuv420p
+   */
+  compatProfile?: CompatProfile
+  /** 视频压缩时的音轨码率，如 128k；未设时按 128k */
+  videoAudioBitrate?: string
+  /** 输出帧率；source / undefined = 不改 */
+  fps?: FpsMode
+  /** x264 编码速度；仅 libx264 生效，默认 medium */
+  encodePreset?: EncodePreset
 }
 
 /** 画面旋转方向 */
@@ -123,6 +138,49 @@ export const ROTATE90_OPTIONS: ReadonlyArray<{
   { value: 'ccw', label: '逆时针 90°（竖→横）' },
   { value: '180', label: '旋转 180°' }
 ]
+
+/** H.264 兼容档 */
+export type CompatProfile = 'auto' | 'main-l4' | 'high'
+
+/** 兼容档选项（任务选项 UI） */
+export const COMPAT_PROFILE_OPTIONS: ReadonlyArray<{
+  value: CompatProfile
+  label: string
+}> = [
+  { value: 'auto', label: '自动' },
+  { value: 'main-l4', label: '兼容 Main@L4' },
+  { value: 'high', label: '高质量 High' }
+]
+
+/** 输出帧率 */
+export type FpsMode = 'source' | '24' | '30' | '60'
+
+/** 帧率选项（任务选项 UI） */
+export const FPS_OPTIONS: ReadonlyArray<{
+  value: FpsMode
+  label: string
+}> = [
+  { value: 'source', label: '原帧率' },
+  { value: '24', label: '24 fps' },
+  { value: '30', label: '30 fps' },
+  { value: '60', label: '60 fps' }
+]
+
+/** x264 编码速度 preset */
+export type EncodePreset = 'fast' | 'medium' | 'slow'
+
+/** 编码速度选项（任务选项 UI） */
+export const ENCODE_PRESET_OPTIONS: ReadonlyArray<{
+  value: EncodePreset
+  label: string
+}> = [
+  { value: 'fast', label: '快速' },
+  { value: 'medium', label: '均衡' },
+  { value: 'slow', label: '高质量' }
+]
+
+/** 视频模式默认音轨码率（保持旧任务体积） */
+export const DEFAULT_VIDEO_AUDIO_BITRATE = '128k'
 
 /** 预设定义 */
 export interface CompressPreset {

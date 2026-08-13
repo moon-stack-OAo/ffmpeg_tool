@@ -47,6 +47,11 @@ const {
   trimStart,
   trimEnd,
   rotate90,
+  muteAudio,
+  compatProfile,
+  videoAudioBitrate,
+  fps,
+  encodePreset,
   custom,
   currentPreset,
   isCustom,
@@ -72,6 +77,11 @@ const {
   onTrimStartChange,
   onTrimEndChange,
   onRotate90Change,
+  onMuteAudioChange,
+  onCompatProfileChange,
+  onVideoAudioBitrateChange,
+  onFpsChange,
+  onEncodePresetChange,
   onSelectOutput,
   startWatchers,
   stopWatchers,
@@ -446,16 +456,25 @@ async function onResetSettings(): Promise<void> {
         :preset-id="presetId"
         :target-size-mb="targetSizeMb"
         :task-mode="taskMode"
+        :compat-profile="compatProfile"
+        :encode-preset="encodePreset"
+        :fps="fps"
+        :mute-audio="muteAudio"
         :rotate90="rotate90"
         :trim-end="trimEnd"
         :trim-start="trimStart"
         :two-pass="twoPass"
+        :video-audio-bitrate="videoAudioBitrate"
         @apply-to-pending="applyOptionsToPending"
         @audio-bitrate-change="onAudioBitrateChange"
         @audio-format-change="onAudioFormatChange"
+        @compat-profile-change="onCompatProfileChange"
         @concurrency-change="onConcurrencyChange"
         @custom-name-template-input="onCustomNameTemplateInput"
+        @encode-preset-change="onEncodePresetChange"
         @encoder-change="onEncoderChange"
+        @fps-change="onFpsChange"
+        @mute-audio-change="onMuteAudioChange"
         @name-template-change="onNameTemplateChange"
         @output-dir-mode-change="onOutputDirModeChange"
         @preset-change="onPresetChange"
@@ -466,6 +485,7 @@ async function onResetSettings(): Promise<void> {
         @trim-end-change="onTrimEndChange"
         @trim-start-change="onTrimStartChange"
         @two-pass-change="onTwoPassChange"
+        @video-audio-bitrate-change="onVideoAudioBitrateChange"
     />
 
     <div class="workspace">

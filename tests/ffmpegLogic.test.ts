@@ -242,6 +242,141 @@ describe('buildCompressArgs', () => {
     expect(args).toContain('-an')
     expect(args).toContain('null')
   })
+
+  it('muteAudio=true 时含 -an，不含 aac / libopus', () => {
+    const x264 = buildCompressArgs(baseOptions({ muteAudio: true }), 'libx264')
+    expect(x264).toContain('-an')
+    expect(x264).not.toContain('aac')
+    expect(x264).not.toContain('libopus')
+    expect(x264).not.toContain('-c:a')
+
+    const vp9 = buildCompressArgs(
+      baseOptions({ muteAudio: true, format: 'webm' }),
+      'libvpx-vp9'
+    )
+    expect(vp9).toContain('-an')
+    expect(vp9).not.toContain('aac')
+    expect(vp9).not.toContain('libopus')
+    expect(vp9).not.toContain('-c:a')
+  })
+
+  it('muteAudio 未设时仍有音频编码器', () => {
+    const x264 = buildCompressArgs(baseOptions(), 'libx264')
+    expect(x264).toContain('aac')
+    expect(x264).not.toContain('-an')
+
+    const vp9 = buildCompressArgs(baseOptions({ format: 'webm' }), 'libvpx-vp9')
+    expect(vp9).toContain('libopus')
+    expect(vp9).not.toContain('-an')
+  })
+
+  it('main-l4 + libx264 含 profile/level/pix_fmt', () => {
+    const args = buildCompressArgs(
+      baseOptions({ compatProfile: 'main-l4' }),
+      'libx264'
+    )
+    expect(args).toContain('-profile:v')
+    expect(args).toContain('main')
+    expect(args).toContain('-level')
+    expect(args).toContain('4.0')
+    expect(args).toContain('-pix_fmt')
+    expect(args).toContain('yuv420p')
+  })
+
+  it('high + libx264 含 profile high 与 pix_fmt，不含 level', () => {
+    const args = buildCompressArgs(
+      baseOptions({ compatProfile: 'high' }),
+      'libx264'
+    )
+    expect(args).toContain('-profile:v')
+    expect(args).toContain('high')
+    expect(args).toContain('-pix_fmt')
+    expect(args).toContain('yuv420p')
+    expect(args).not.toContain('-level')
+  })
+
+  it('auto 不含 -profile:v', () => {
+    const args = buildCompressArgs(
+      baseOptions({ compatProfile: 'auto' }),
+      'libx264'
+    )
+    expect(args).not.toContain('-profile:v')
+    const unset = buildCompressArgs(baseOptions(), 'libx264')
+    expect(unset).not.toContain('-profile:v')
+  })
+
+  it('webm + main-l4 不含 -profile:v', () => {
+    const args = buildCompressArgs(
+      baseOptions({ format: 'webm', compatProfile: 'main-l4' }),
+      'libvpx-vp9'
+    )
+    expect(args).not.toContain('-profile:v')
+  })
+
+  it("videoAudioBitrate='192k' + libx264：-b:a 后为 192k，编码器 aac", () => {
+    const args = buildCompressArgs(
+      baseOptions({ videoAudioBitrate: '192k' }),
+      'libx264'
+    )
+    expect(args).toContain('aac')
+    const baIdx = args.indexOf('-b:a')
+    expect(baIdx).toBeGreaterThanOrEqual(0)
+    expect(args[baIdx + 1]).toBe('192k')
+  })
+
+  it('videoAudioBitrate 未设时仍为 128k', () => {
+    const args = buildCompressArgs(baseOptions(), 'libx264')
+    const baIdx = args.indexOf('-b:a')
+    expect(baIdx).toBeGreaterThanOrEqual(0)
+    expect(args[baIdx + 1]).toBe('128k')
+  })
+
+  it("fps='30'：-vf 含 fps=30", () => {
+    const args = buildCompressArgs(baseOptions({ fps: '30' }), 'libx264')
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe('fps=30')
+  })
+
+  it('rotate + scale + fps：transpose=1,scale=...,fps=30', () => {
+    const args = buildCompressArgs(
+      baseOptions({ rotate90: 'cw', maxEdge: 1280, fps: '30' }),
+      'libx264'
+    )
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe(
+      "transpose=1,scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease,fps=30"
+    )
+  })
+
+  it("encodePreset='slow' + libx264：-preset slow", () => {
+    const args = buildCompressArgs(
+      baseOptions({ encodePreset: 'slow' }),
+      'libx264'
+    )
+    const presetIdx = args.indexOf('-preset')
+    expect(presetIdx).toBeGreaterThanOrEqual(0)
+    expect(args[presetIdx + 1]).toBe('slow')
+  })
+
+  it("encodePreset='slow' + h264_nvenc：仍是 -preset p4", () => {
+    const args = buildCompressArgs(
+      baseOptions({ encodePreset: 'slow' }),
+      'h264_nvenc'
+    )
+    const presetIdx = args.indexOf('-preset')
+    expect(presetIdx).toBeGreaterThanOrEqual(0)
+    expect(args[presetIdx + 1]).toBe('p4')
+    expect(args).not.toContain('slow')
+  })
+
+  it('默认 libx264 仍是 -preset medium', () => {
+    const args = buildCompressArgs(baseOptions(), 'libx264')
+    const presetIdx = args.indexOf('-preset')
+    expect(presetIdx).toBeGreaterThanOrEqual(0)
+    expect(args[presetIdx + 1]).toBe('medium')
+  })
 })
 
 describe('supportsTwoPass / shouldUseTwoPass', () => {

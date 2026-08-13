@@ -1,6 +1,7 @@
 import path from 'path'
 import type {
   CompressOptions,
+  EncodePreset,
   EncoderDetectResult,
   EncoderId,
   OutputFormat,
@@ -10,8 +11,64 @@ import type {
 import {
   DEFAULT_AUDIO_BITRATE,
   DEFAULT_AUDIO_NAME_TEMPLATE,
-  DEFAULT_NAME_TEMPLATE
+  DEFAULT_NAME_TEMPLATE,
+  DEFAULT_VIDEO_AUDIO_BITRATE
 } from './types'
+
+/** H.264 系列编码器（可加 profile/level） */
+const H264_ENCODERS: ReadonlyArray<ResolvedEncoder> = [
+  'libx264',
+  'h264_nvenc',
+  'h264_qsv',
+  'h264_amf',
+  'h264_videotoolbox'
+]
+
+/** 从 `128k` 解析 kbps；无效时回退 128 */
+export function parseAudioBitrateKbps(bitrate?: string): number {
+  if (!bitrate || typeof bitrate !== 'string') return 128
+  const m = bitrate.trim().match(/^(\d+)\s*k$/i)
+  if (!m) return 128
+  const n = parseInt(m[1], 10)
+  if (!Number.isFinite(n) || n <= 0) return 128
+  return n
+}
+
+/** 视频模式音轨码率；未设时保持 128k */
+export function resolveVideoAudioBitrate(options: CompressOptions): string {
+  const raw = options.videoAudioBitrate
+  if (raw && typeof raw === 'string' && raw.trim()) {
+    return raw.trim()
+  }
+  return DEFAULT_VIDEO_AUDIO_BITRATE
+}
+
+/** x264 preset；默认 medium */
+export function resolveEncodePreset(options: CompressOptions): EncodePreset {
+  const p = options.encodePreset
+  if (p === 'fast' || p === 'medium' || p === 'slow') return p
+  return 'medium'
+}
+
+/**
+ * 追加 H.264 兼容档参数（WebM/VP9 跳过）
+ * - main-l4：Main@L4 + yuv420p
+ * - high：High + yuv420p
+ * - auto / undefined：不加
+ */
+export function appendH264CompatArgs(
+  args: string[],
+  options: CompressOptions,
+  resolved: ResolvedEncoder
+): void {
+  if (!H264_ENCODERS.includes(resolved)) return
+  const profile = options.compatProfile
+  if (profile === 'main-l4') {
+    args.push('-profile:v', 'main', '-level', '4.0', '-pix_fmt', 'yuv420p')
+  } else if (profile === 'high') {
+    args.push('-profile:v', 'high', '-pix_fmt', 'yuv420p')
+  }
+}
 
 /**
  * CRF(软件) → 硬件质量参数映射说明：
@@ -284,7 +341,7 @@ export function buildRotateFilter(
 }
 
 /**
- * 组合视频滤镜：先旋转再缩放（最长边限制作用于最终画面）
+ * 组合视频滤镜：旋转 → 缩放 → 帧率（最长边限制作用于最终画面）
  */
 export function buildVideoFilter(options: CompressOptions): string | null {
   const parts: string[] = []
@@ -292,6 +349,10 @@ export function buildVideoFilter(options: CompressOptions): string | null {
   if (rotate) parts.push(rotate)
   const scale = buildScaleFilter(options.maxEdge)
   if (scale) parts.push(scale)
+  const fps = options.fps
+  if (fps === '24' || fps === '30' || fps === '60') {
+    parts.push(`fps=${fps}`)
+  }
   if (parts.length === 0) return null
   return parts.join(',')
 }
@@ -372,8 +433,12 @@ export function buildCompressArgs(
   if (targetMb > 0 && durationSec <= 0) {
     ctx?.notes?.push('目标体积已设但时长未知，已回退 CRF/质量模式')
   }
+  const audioKbps =
+    options.muteAudio === true
+      ? 0
+      : parseAudioBitrateKbps(options.videoAudioBitrate)
   const videoKbps = useAbr
-    ? estimateVideoBitrateKbps(targetMb, durationSec, 128)
+    ? estimateVideoBitrateKbps(targetMb, durationSec, audioKbps)
     : 0
   const bv = `${videoKbps}k`
   const maxrate = bv
@@ -427,10 +492,10 @@ export function buildCompressArgs(
     if (useTwoPass && pass != null && passLog) {
       args.push('-pass', String(pass), '-passlogfile', passLog)
     }
-    if (pass === 1) {
+    if (pass === 1 || options.muteAudio === true) {
       args.push('-an')
     } else {
-      args.push('-c:a', 'libopus', '-b:a', '128k')
+      args.push('-c:a', 'libopus', '-b:a', resolveVideoAudioBitrate(options))
     }
     if (vf) {
       args.push('-vf', vf)
@@ -446,12 +511,13 @@ export function buildCompressArgs(
 
   // H.264 系列
   if (resolved === 'libx264') {
+    const x264Preset = resolveEncodePreset(options)
     if (useAbr) {
       args.push(
         '-c:v',
         'libx264',
         '-preset',
-        'medium',
+        x264Preset,
         '-b:v',
         bv,
         '-maxrate',
@@ -460,7 +526,7 @@ export function buildCompressArgs(
         bufsize
       )
     } else {
-      args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', String(options.crf))
+      args.push('-c:v', 'libx264', '-preset', x264Preset, '-crf', String(options.crf))
     }
   } else if (resolved === 'h264_nvenc') {
     if (useAbr) {
@@ -576,15 +642,17 @@ export function buildCompressArgs(
     }
   }
 
+  appendH264CompatArgs(args, options, resolved)
+
   if (useTwoPass && pass != null && passLog) {
     args.push('-pass', String(pass), '-passlogfile', passLog)
   }
 
-  // 音频：pass1 无音轨；其余 AAC
-  if (pass === 1) {
+  // 音频：pass1 / 静音无音轨；其余 AAC
+  if (pass === 1 || options.muteAudio === true) {
     args.push('-an')
   } else {
-    args.push('-c:a', 'aac', '-b:a', '128k')
+    args.push('-c:a', 'aac', '-b:a', resolveVideoAudioBitrate(options))
   }
 
   if (vf) {

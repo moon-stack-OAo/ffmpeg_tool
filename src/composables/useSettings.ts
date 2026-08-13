@@ -8,9 +8,13 @@ import {
   type AppSettings,
   type AudioFormat,
   type CloseAction,
+  type CompatProfile,
   type CompressOptions,
   DEFAULT_PRESETS,
+  DEFAULT_VIDEO_AUDIO_BITRATE,
+  type EncodePreset,
   type EncoderId,
+  type FpsMode,
   type OutputDirMode,
   type OutputFormat,
   type PresetId,
@@ -55,6 +59,16 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const trimEnd = ref(0)
   /** 画面旋转 90°（任务级，不持久化到 settings） */
   const rotate90 = ref<Rotate90>('none')
+  /** 去掉音轨（任务级） */
+  const muteAudio = ref(false)
+  /** H.264 兼容档（任务级） */
+  const compatProfile = ref<CompatProfile>('auto')
+  /** 视频模式音轨码率（任务级） */
+  const videoAudioBitrate = ref(DEFAULT_VIDEO_AUDIO_BITRATE)
+  /** 输出帧率（任务级） */
+  const fps = ref<FpsMode>('source')
+  /** x264 编码速度（任务级） */
+  const encodePreset = ref<EncodePreset>('medium')
   const custom = reactive({
     crf: 23,
     maxEdge: 0,
@@ -97,6 +111,24 @@ export function useSettings(options: UseSettingsOptions = {}) {
       rotate90.value === '180'
         ? rotate90.value
         : undefined
+    const mute = muteAudio.value === true ? true : undefined
+    const compat =
+      compatProfile.value === 'main-l4' || compatProfile.value === 'high'
+        ? compatProfile.value
+        : undefined
+    const videoBr =
+      videoAudioBitrate.value &&
+      videoAudioBitrate.value !== DEFAULT_VIDEO_AUDIO_BITRATE
+        ? videoAudioBitrate.value
+        : undefined
+    const fpsMode =
+      fps.value === '24' || fps.value === '30' || fps.value === '60'
+        ? fps.value
+        : undefined
+    const preset =
+      encodePreset.value === 'fast' || encodePreset.value === 'slow'
+        ? encodePreset.value
+        : undefined
     const target =
       typeof targetSizeMb.value === 'number' &&
       Number.isFinite(targetSizeMb.value) &&
@@ -121,7 +153,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
             audioBitrate: audioBitrate.value,
             trimStart: trimStartSec,
             trimEnd: trimEndSec,
-            rotate90: rotate
+            rotate90: rotate,
+            muteAudio: mute,
+            compatProfile: compat,
+            videoAudioBitrate: videoBr,
+            fps: fpsMode,
+            encodePreset: preset
           }
         : {
             presetId: p.id,
@@ -139,7 +176,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
             audioBitrate: audioBitrate.value,
             trimStart: trimStartSec,
             trimEnd: trimEndSec,
-            rotate90: rotate
+            rotate90: rotate,
+            muteAudio: mute,
+            compatProfile: compat,
+            videoAudioBitrate: videoBr,
+            fps: fpsMode,
+            encodePreset: preset
           }
     return base
   }
@@ -424,6 +466,33 @@ export function useSettings(options: UseSettingsOptions = {}) {
     options.onOptionsChange?.()
   }
 
+  function onMuteAudioChange(v: boolean): void {
+    muteAudio.value = Boolean(v)
+    options.onOptionsChange?.()
+  }
+
+  function onCompatProfileChange(v: CompatProfile): void {
+    compatProfile.value =
+      v === 'main-l4' || v === 'high' ? v : 'auto'
+    options.onOptionsChange?.()
+  }
+
+  function onVideoAudioBitrateChange(v: string): void {
+    videoAudioBitrate.value = v || DEFAULT_VIDEO_AUDIO_BITRATE
+    options.onOptionsChange?.()
+  }
+
+  function onFpsChange(v: FpsMode): void {
+    fps.value = v === '24' || v === '30' || v === '60' ? v : 'source'
+    options.onOptionsChange?.()
+  }
+
+  function onEncodePresetChange(v: EncodePreset): void {
+    encodePreset.value =
+      v === 'fast' || v === 'slow' || v === 'medium' ? v : 'medium'
+    options.onOptionsChange?.()
+  }
+
   async function onSelectOutput(): Promise<void> {
     const res = await window.electronAPI.selectDirectory()
     if (res.path) {
@@ -480,6 +549,11 @@ export function useSettings(options: UseSettingsOptions = {}) {
     trimStart,
     trimEnd,
     rotate90,
+    muteAudio,
+    compatProfile,
+    videoAudioBitrate,
+    fps,
+    encodePreset,
     custom,
     currentPreset,
     isCustom,
@@ -509,6 +583,11 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onTrimStartChange,
     onTrimEndChange,
     onRotate90Change,
+    onMuteAudioChange,
+    onCompatProfileChange,
+    onVideoAudioBitrateChange,
+    onFpsChange,
+    onEncodePresetChange,
     onSelectOutput,
     startWatchers,
     stopWatchers

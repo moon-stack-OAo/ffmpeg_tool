@@ -2,12 +2,20 @@
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
-import type { AppInfo, CloseAction, FfmpegStatus, ThemeMode } from '@shared/types'
+import type {
+  AppInfo,
+  CloseAction,
+  FfmpegStatus,
+  ImageEngineId,
+  ImageEngineStatus,
+  ThemeMode
+} from '@shared/types'
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
 import {
   CLOSE_ACTION_OPTIONS,
   CONCURRENCY_HINT,
   CONCURRENCY_OPTIONS,
+  IMAGE_ENGINE_OPTIONS,
   THEME_OPTIONS
 } from '@shared/types'
 
@@ -20,6 +28,9 @@ const props = defineProps<{
   closeAction: CloseAction
   ffmpegBinDir: string
   ffmpegStatus: FfmpegStatus | null
+  imageEngine: ImageEngineId
+  imagemagickPath: string
+  imageStatus: ImageEngineStatus | null
   appVersion: string
   isPackaged: boolean
   appInfo: AppInfo | null
@@ -36,6 +47,11 @@ const emit = defineEmits<{
   browseFfmpegDir: []
   clearFfmpegBinDir: []
   reDetectFfmpeg: []
+  imageEngineChange: [v: ImageEngineId]
+  browseMagickPath: []
+  clearMagickPath: []
+  reDetectImage: []
+  testImageEngine: []
   openAppData: []
   changeDataDir: []
   clearStoredTasks: []
@@ -237,6 +253,91 @@ function onPathKeydown(e: KeyboardEvent): void {
             <el-button size="small" @click="emit('reDetectFfmpeg')">
               重新检测
             </el-button>
+          </div>
+
+          <div class="setting-divider" />
+
+          <div class="setting-row">
+            <span class="setting-label">图片引擎</span>
+            <el-select
+              :model-value="imageEngine"
+              size="small"
+              class="w-xl"
+              @change="(v: ImageEngineId) => emit('imageEngineChange', v)"
+            >
+              <el-option
+                v-for="opt in IMAGE_ENGINE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Sharp</span>
+            <el-tag
+              :type="imageStatus?.sharpReady ? 'success' : 'danger'"
+              effect="plain"
+              size="small"
+            >
+              {{ imageStatus?.sharpReady ? '就绪' : '未就绪' }}
+            </el-tag>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">ImageMagick</span>
+            <el-tag
+              :type="imageStatus?.magickReady ? 'success' : 'info'"
+              effect="plain"
+              size="small"
+            >
+              {{ imageStatus?.magickReady ? '可用' : '未检测到' }}
+            </el-tag>
+          </div>
+          <div
+            v-if="imageStatus?.magickPath"
+            class="setting-row"
+          >
+            <span class="setting-label">magick</span>
+            <span class="setting-value" :title="imageStatus.magickPath">
+              {{ imageStatus.magickPath }}
+            </span>
+          </div>
+          <div
+            v-if="imageStatus?.error"
+            class="setting-row"
+          >
+            <span class="setting-label" />
+            <span class="setting-error">{{ imageStatus.error }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Magick 路径</span>
+            <el-input
+              :model-value="imagemagickPath"
+              class="bin-dir-input"
+              placeholder="留空=自动探测 PATH 中的 magick"
+              readonly
+              size="small"
+            />
+          </div>
+          <div class="setting-row actions">
+            <el-button :icon="Folder" size="small" @click="emit('browseMagickPath')">
+              浏览
+            </el-button>
+            <el-button size="small" @click="emit('clearMagickPath')">
+              清除
+            </el-button>
+            <el-button size="small" @click="emit('reDetectImage')">
+              重新检测
+            </el-button>
+            <el-button size="small" type="primary" plain @click="emit('testImageEngine')">
+              测试引擎
+            </el-button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label" />
+            <span class="setting-hint">
+              可指定 magick.exe 全路径，或含 magick 的安装目录
+            </span>
           </div>
         </div>
       </el-tab-pane>

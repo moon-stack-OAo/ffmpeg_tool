@@ -26,7 +26,11 @@ import {
   ROTATE90_OPTIONS,
   type Rotate90,
   TASK_MODE_OPTIONS,
-  type TaskMode
+  type TaskMode,
+  WATERMARK_MODE_OPTIONS,
+  WATERMARK_POSITION_OPTIONS,
+  type WatermarkMode,
+  type WatermarkPosition
 } from '@shared/types'
 
 defineProps<{
@@ -64,6 +68,14 @@ defineProps<{
   fps: FpsMode
   /** x264 编码速度 */
   encodePreset: EncodePreset
+  watermarkMode: WatermarkMode
+  watermarkImagePath: string
+  watermarkText: string
+  watermarkPosition: WatermarkPosition
+  watermarkOpacity: number
+  watermarkScalePercent: number
+  watermarkFontSize: number
+  watermarkMargin: number
   custom: {
     crf: number
     maxEdge: number
@@ -92,6 +104,15 @@ const emit = defineEmits<{
   videoAudioBitrateChange: [v: string]
   fpsChange: [v: FpsMode]
   encodePresetChange: [v: EncodePreset]
+  watermarkModeChange: [v: WatermarkMode]
+  watermarkImagePathChange: [v: string]
+  watermarkTextChange: [v: string]
+  watermarkPositionChange: [v: WatermarkPosition]
+  watermarkOpacityChange: [v: number]
+  watermarkScalePercentChange: [v: number]
+  watermarkFontSizeChange: [v: number]
+  watermarkMarginChange: [v: number]
+  selectWatermarkImage: []
   applyToPending: []
 }>()
 
@@ -269,7 +290,7 @@ function encoderTitle(isWebm: boolean, info: EncoderDetectResult | null): string
       >
         <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
         <span>高级选项</span>
-        <span class="muted">{{ isAudioMode ? '并发 · 裁剪' : '编码 · 画面 · 音频 · 裁剪' }}</span>
+        <span class="muted">{{ isAudioMode ? '并发 · 裁剪' : '编码 · 画面 · 水印 · 音频 · 裁剪' }}</span>
       </button>
 
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
@@ -497,6 +518,122 @@ function encoderTitle(isWebm: boolean, info: EncoderDetectResult | null): string
             </template>
           </div>
 
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item">
+              <span class="label">水印</span>
+              <el-select
+                :model-value="watermarkMode"
+                size="small"
+                class="w-2xl"
+                @change="(v: WatermarkMode) => emit('watermarkModeChange', v)"
+              >
+                <el-option
+                  v-for="opt in WATERMARK_MODE_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+
+            <template v-if="watermarkMode === 'image'">
+              <div class="opt-item opt-item-fill">
+                <el-input
+                  :model-value="watermarkImagePath"
+                  size="small"
+                  placeholder="图片路径"
+                  class="w-5xl"
+                  @update:model-value="(v: string) => emit('watermarkImagePathChange', v)"
+                />
+                <el-button size="small" @click="emit('selectWatermarkImage')">浏览</el-button>
+              </div>
+              <div class="opt-item" title="相对视频短边宽度 %">
+                <span class="label">缩放%</span>
+                <el-input-number
+                  :model-value="watermarkScalePercent"
+                  :min="1"
+                  :max="100"
+                  :step="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('watermarkScalePercentChange', typeof v === 'number' ? v : 15)"
+                />
+              </div>
+            </template>
+
+            <template v-if="watermarkMode === 'text'">
+              <div class="opt-item opt-item-fill">
+                <el-input
+                  :model-value="watermarkText"
+                  size="small"
+                  placeholder="水印文字"
+                  class="w-5xl"
+                  @update:model-value="(v: string) => emit('watermarkTextChange', v)"
+                />
+              </div>
+              <div class="opt-item">
+                <span class="label">字号</span>
+                <el-input-number
+                  :model-value="watermarkFontSize"
+                  :min="8"
+                  :max="200"
+                  :step="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('watermarkFontSizeChange', typeof v === 'number' ? v : 24)"
+                />
+              </div>
+            </template>
+
+            <template v-if="watermarkMode !== 'none'">
+              <div class="opt-item">
+                <span class="label">位置</span>
+                <el-select
+                  :model-value="watermarkPosition"
+                  size="small"
+                  class="w-2xl"
+                  @change="(v: WatermarkPosition) => emit('watermarkPositionChange', v)"
+                >
+                  <el-option
+                    v-for="opt in WATERMARK_POSITION_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+              </div>
+              <div class="opt-item" title="0–1">
+                <span class="label">透明度</span>
+                <el-input-number
+                  :model-value="watermarkOpacity"
+                  :min="0"
+                  :max="1"
+                  :step="0.1"
+                  :precision="2"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('watermarkOpacityChange', typeof v === 'number' ? v : 0.8)"
+                />
+              </div>
+              <div class="opt-item">
+                <span class="label">边距</span>
+                <el-input-number
+                  :model-value="watermarkMargin"
+                  :min="0"
+                  :max="500"
+                  :step="1"
+                  size="small"
+                  controls-position="right"
+                  class="w-lg"
+                  @change="(v: number | undefined) => emit('watermarkMarginChange', typeof v === 'number' ? v : 16)"
+                />
+              </div>
+            </template>
+          </div>
+
           <div class="opt-row">
             <div class="opt-item" title="去掉音轨">
               <span class="label">静音</span>
@@ -604,6 +741,10 @@ function encoderTitle(isWebm: boolean, info: EncoderDetectResult | null): string
   margin-top: 10px;
   padding-top: 10px;
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
+}
+
+.opt-row-wrap {
+  flex-wrap: wrap;
 }
 
 .opt-divider {

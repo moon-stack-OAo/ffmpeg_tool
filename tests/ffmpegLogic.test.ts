@@ -6,12 +6,16 @@ import {
   buildCompressArgsPass,
   buildOutputPath,
   buildSeekArgs,
+  buildWatermarkOverlayExpr,
   effectiveDuration,
+  escapeDrawtext,
+  escapeFilterPath,
   estimateEtaSec,
   estimateVideoBitrateKbps,
   nullOutputPath,
   parseProgressLine,
   parseSpeedMultiplier,
+  planVideoFilters,
   resolveAudioEncoder,
   resolveVideoEncoder,
   shouldUseTwoPass,
@@ -376,6 +380,153 @@ describe('buildCompressArgs', () => {
     const presetIdx = args.indexOf('-preset')
     expect(presetIdx).toBeGreaterThanOrEqual(0)
     expect(args[presetIdx + 1]).toBe('medium')
+  })
+
+  it('无水印时与旧行为一致（无 -filter_complex）', () => {
+    const args = buildCompressArgs(baseOptions({ maxEdge: 1280 }), 'libx264')
+    expect(args).toContain('-vf')
+    expect(args).not.toContain('-filter_complex')
+    expect(args).not.toContain('-map')
+  })
+
+  it('文字水印：args 含 drawtext', () => {
+    const args = buildCompressArgs(
+      baseOptions({
+        watermark: {
+          mode: 'text',
+          text: 'Hello',
+          position: 'br',
+          opacity: 0.8,
+          fontSize: 24
+        }
+      }),
+      'libx264'
+    )
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toContain('drawtext=')
+    expect(args[vfIdx + 1]).toContain("text='Hello'")
+    expect(args).not.toContain('-filter_complex')
+  })
+
+  it('图片水印：含 filter_complex 与 map，无 -vf', () => {
+    const filterPlanOut: { extraInputs?: string[]; filterComplex?: string } = {}
+    const args = buildCompressArgs(
+      baseOptions({
+        watermark: {
+          mode: 'image',
+          imagePath: 'D:\\logo\\mark.png',
+          position: 'br',
+          opacity: 0.7,
+          scalePercent: 20
+        }
+      }),
+      'libx264',
+      { filterPlanOut }
+    )
+    expect(args).toContain('-filter_complex')
+    expect(args).toContain('-map')
+    expect(args).toContain('[vout]')
+    expect(args).toContain('0:a?')
+    expect(args).not.toContain('-vf')
+    expect(filterPlanOut.extraInputs).toEqual(['D:\\logo\\mark.png'])
+    expect(filterPlanOut.filterComplex).toContain('overlay=')
+    expect(filterPlanOut.filterComplex).toContain('colorchannelmixer=aa=0.7')
+  })
+
+  it('图片水印 + mute：map 视频不 map 音频', () => {
+    const args = buildCompressArgs(
+      baseOptions({
+        muteAudio: true,
+        watermark: {
+          mode: 'image',
+          imagePath: 'C:/wm.png',
+          position: 'tl'
+        }
+      }),
+      'libx264'
+    )
+    expect(args).toContain('-filter_complex')
+    expect(args).toContain('[vout]')
+    expect(args).toContain('-an')
+    expect(args).not.toContain('0:a?')
+  })
+
+  it('mode=audio 时忽略水印（buildCompressArgs 不走视频滤镜）', () => {
+    // 音频模式不调用 buildCompressArgs 做视频；plan 应无水印
+    const plan = planVideoFilters(
+      baseOptions({
+        mode: 'audio',
+        watermark: { mode: 'text', text: 'x' }
+      })
+    )
+    expect(plan.vf).toBeUndefined()
+    expect(plan.filterComplex).toBeUndefined()
+  })
+
+  it('rotate + scale + fps + 文字水印顺序', () => {
+    const args = buildCompressArgs(
+      baseOptions({
+        rotate90: 'cw',
+        maxEdge: 1280,
+        fps: '30',
+        watermark: { mode: 'text', text: 'WM', position: 'tl' }
+      }),
+      'libx264'
+    )
+    const vf = args[args.indexOf('-vf') + 1]
+    expect(vf.startsWith('transpose=1,scale=')).toBe(true)
+    expect(vf).toContain(',fps=30,drawtext=')
+  })
+})
+
+describe('watermark helpers', () => {
+  it('escapeDrawtext 转义特殊字符', () => {
+    expect(escapeDrawtext(`a:b'c%d\\e`)).toBe(`a\\:b\\'c\\%d\\\\e`)
+  })
+
+  it('escapeFilterPath Windows 路径', () => {
+    expect(escapeFilterPath('C:\\Fonts\\msyh.ttc')).toBe('C\\:/Fonts/msyh.ttc')
+  })
+
+  it('buildWatermarkOverlayExpr 九宫格', () => {
+    expect(buildWatermarkOverlayExpr('tl', 10, 20)).toEqual({ x: '10', y: '20' })
+    expect(buildWatermarkOverlayExpr('br', 16, 16)).toEqual({
+      x: 'W-w-16',
+      y: 'H-h-16'
+    })
+    expect(buildWatermarkOverlayExpr('mc', 0, 0)).toEqual({
+      x: '(W-w)/2',
+      y: '(H-h)/2'
+    })
+  })
+
+  it('planVideoFilters 图片含 extraInputs', () => {
+    const plan = planVideoFilters(
+      baseOptions({
+        watermark: {
+          mode: 'image',
+          imagePath: '/tmp/a.png',
+          scalePercent: 15
+        }
+      })
+    )
+    expect(plan.extraInputs).toEqual(['/tmp/a.png'])
+    expect(plan.mapVideoLabel).toBe('[vout]')
+    expect(plan.filterComplex).toContain('[1:v]')
+    expect(plan.filterComplex).toContain('overlay=')
+  })
+
+  it('planVideoFilters 文字可带 fontfile', () => {
+    const plan = planVideoFilters(
+      baseOptions({
+        watermark: { mode: 'text', text: '测', startSec: 1, endSec: 5 }
+      }),
+      { fontfile: 'C:\\Windows\\Fonts\\msyh.ttc' }
+    )
+    expect(plan.vf).toContain('drawtext=')
+    expect(plan.vf).toContain("fontfile='C\\:/Windows/Fonts/msyh.ttc'")
+    expect(plan.vf).toContain("enable='between(t\\,1\\,5)'")
   })
 })
 

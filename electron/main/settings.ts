@@ -6,6 +6,7 @@ import type {
   AudioFormat,
   CloseAction,
   EncoderId,
+  ImageEngineId,
   OutputDirMode,
   OutputFormat,
   PresetId,
@@ -36,7 +37,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   persistTasks: true,
   theme: 'system',
   ffmpegBinDir: '',
-  closeAction: 'ask'
+  closeAction: 'ask',
+  imageEngine: 'sharp',
+  imagemagickPath: ''
 }
 
 let cached: AppSettings | null = null
@@ -81,6 +84,10 @@ function normalizeCloseAction(v: unknown): CloseAction {
   return DEFAULT_SETTINGS.closeAction
 }
 
+function normalizeImageEngine(v: unknown): ImageEngineId {
+  return v === 'imagemagick' ? 'imagemagick' : 'sharp'
+}
+
 function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
   const src = raw && typeof raw === 'object' ? raw : {}
   return {
@@ -121,7 +128,10 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
     theme: normalizeTheme(src.theme),
     ffmpegBinDir:
       typeof src.ffmpegBinDir === 'string' ? src.ffmpegBinDir.trim() : '',
-    closeAction: normalizeCloseAction(src.closeAction)
+    closeAction: normalizeCloseAction(src.closeAction),
+    imageEngine: normalizeImageEngine(src.imageEngine),
+    imagemagickPath:
+      typeof src.imagemagickPath === 'string' ? src.imagemagickPath.trim() : ''
   }
 }
 

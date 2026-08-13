@@ -3,6 +3,7 @@ import type {
   AppSettings,
   CompressTask,
   ElectronAPI,
+  ImageProcessOptions,
   ProgressPayload,
   TaskEndPayload,
   TrayCommand,
@@ -214,6 +215,7 @@ installDropCapture()
 const api: ElectronAPI = {
   selectFiles: () => ipcRenderer.invoke(IpcChannels.SELECT_FILES),
   selectDirectory: () => ipcRenderer.invoke(IpcChannels.SELECT_DIR),
+  selectImage: () => ipcRenderer.invoke(IpcChannels.SELECT_IMAGE),
   getFfmpegStatus: () => ipcRenderer.invoke(IpcChannels.GET_FFMPEG_STATUS),
   detectEncoders: () => ipcRenderer.invoke(IpcChannels.DETECT_ENCODERS),
   /** 渲染进程 drop 时也可调用（Electron 对 File 有特殊处理） */
@@ -230,6 +232,11 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IpcChannels.SETTINGS_SET, partial),
   setFfmpegBinDir: (dir: string) =>
     ipcRenderer.invoke(IpcChannels.FFMPEG_SET_BIN_DIR, dir),
+  getImageEngineStatus: () => ipcRenderer.invoke(IpcChannels.IMAGE_STATUS),
+  processImage: (options: ImageProcessOptions) =>
+    ipcRenderer.invoke(IpcChannels.IMAGE_PROCESS, options),
+  setMagickPath: (path: string) =>
+    ipcRenderer.invoke(IpcChannels.IMAGE_SET_MAGICK_PATH, path),
   clearStoredTasks: () => ipcRenderer.invoke(IpcChannels.TASKS_CLEAR),
   resetSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_RESET),
   getAppInfo: () => ipcRenderer.invoke(IpcChannels.APP_INFO),

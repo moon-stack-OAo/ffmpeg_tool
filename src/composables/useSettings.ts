@@ -15,12 +15,15 @@ import {
   type EncodePreset,
   type EncoderId,
   type FpsMode,
+  type ImageEngineId,
   type OutputDirMode,
   type OutputFormat,
   type PresetId,
   type Rotate90,
   type TaskMode,
-  type ThemeMode
+  type ThemeMode,
+  type WatermarkMode,
+  type WatermarkPosition
 } from '@shared/types'
 
 export interface UseSettingsOptions {
@@ -51,6 +54,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const theme = ref<ThemeMode>('system')
   /** 自定义 ffmpeg bin 目录（含 ffmpeg 与 ffprobe），空串=自动探测 */
   const ffmpegBinDir = ref('')
+  /** 图片处理引擎 */
+  const imageEngine = ref<ImageEngineId>('sharp')
+  /** ImageMagick 路径（全路径或目录），空串=自动探测 */
+  const imagemagickPath = ref('')
   /** 关闭按钮行为：ask | tray | quit */
   const closeAction = ref<CloseAction>('ask')
   /** 裁剪开始秒，0 表示不裁剪（任务级，不持久化到 settings） */
@@ -69,6 +76,15 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const fps = ref<FpsMode>('source')
   /** x264 编码速度（任务级） */
   const encodePreset = ref<EncodePreset>('medium')
+  /** 水印（任务级，不持久化到 settings） */
+  const watermarkMode = ref<WatermarkMode>('none')
+  const watermarkImagePath = ref('')
+  const watermarkText = ref('')
+  const watermarkPosition = ref<WatermarkPosition>('br')
+  const watermarkOpacity = ref(0.8)
+  const watermarkScalePercent = ref(15)
+  const watermarkFontSize = ref(24)
+  const watermarkMargin = ref(16)
   const custom = reactive({
     crf: 23,
     maxEdge: 0,
@@ -135,6 +151,51 @@ export function useSettings(options: UseSettingsOptions = {}) {
       targetSizeMb.value > 0
         ? targetSizeMb.value
         : undefined
+    let watermark: CompressOptions['watermark']
+    if (taskMode.value !== 'audio' && watermarkMode.value !== 'none') {
+      const opacity =
+        typeof watermarkOpacity.value === 'number' &&
+        Number.isFinite(watermarkOpacity.value)
+          ? Math.max(0, Math.min(1, watermarkOpacity.value))
+          : 0.8
+      const margin =
+        typeof watermarkMargin.value === 'number' &&
+        Number.isFinite(watermarkMargin.value)
+          ? Math.max(0, Math.round(watermarkMargin.value))
+          : 16
+      if (watermarkMode.value === 'image' && watermarkImagePath.value.trim()) {
+        const scalePct =
+          typeof watermarkScalePercent.value === 'number' &&
+          Number.isFinite(watermarkScalePercent.value)
+            ? Math.max(1, Math.min(100, watermarkScalePercent.value))
+            : 15
+        watermark = {
+          mode: 'image',
+          imagePath: watermarkImagePath.value.trim(),
+          position: watermarkPosition.value || 'br',
+          opacity,
+          scalePercent: scalePct,
+          marginX: margin,
+          marginY: margin
+        }
+      } else if (watermarkMode.value === 'text' && watermarkText.value) {
+        const fontSize =
+          typeof watermarkFontSize.value === 'number' &&
+          Number.isFinite(watermarkFontSize.value) &&
+          watermarkFontSize.value > 0
+            ? Math.round(watermarkFontSize.value)
+            : 24
+        watermark = {
+          mode: 'text',
+          text: watermarkText.value,
+          fontSize,
+          position: watermarkPosition.value || 'br',
+          opacity,
+          marginX: margin,
+          marginY: margin
+        }
+      }
+    }
     const base: CompressOptions =
       presetId.value === 'custom'
         ? {
@@ -158,7 +219,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
             compatProfile: compat,
             videoAudioBitrate: videoBr,
             fps: fpsMode,
-            encodePreset: preset
+            encodePreset: preset,
+            watermark
           }
         : {
             presetId: p.id,
@@ -181,7 +243,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
             compatProfile: compat,
             videoAudioBitrate: videoBr,
             fps: fpsMode,
-            encodePreset: preset
+            encodePreset: preset,
+            watermark
           }
     return base
   }
@@ -206,6 +269,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     persistTasks: boolean
     theme: ThemeMode
     closeAction: CloseAction
+    imageEngine: ImageEngineId
+    imagemagickPath: string
   }>): void {
     if (persistTimer) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
@@ -227,7 +292,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
         notifyOnComplete: notifyOnComplete.value,
         persistTasks: persistTasks.value,
         theme: theme.value,
-        closeAction: closeAction.value
+        closeAction: closeAction.value,
+        imageEngine: imageEngine.value,
+        imagemagickPath: imagemagickPath.value
       }
       void window.electronAPI.setSettings(payload)
     }, 300)
@@ -281,6 +348,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
         : 'system'
     ffmpegBinDir.value =
       typeof s.ffmpegBinDir === 'string' ? s.ffmpegBinDir : ''
+    imageEngine.value = s.imageEngine === 'imagemagick' ? 'imagemagick' : 'sharp'
+    imagemagickPath.value =
+      typeof s.imagemagickPath === 'string' ? s.imagemagickPath : ''
     closeAction.value =
       s.closeAction === 'tray' || s.closeAction === 'quit' || s.closeAction === 'ask'
         ? s.closeAction
@@ -302,6 +372,26 @@ export function useSettings(options: UseSettingsOptions = {}) {
       const res = await window.electronAPI.setFfmpegBinDir(dir)
       if (res.ok) {
         ffmpegBinDir.value = (dir || '').trim()
+        return { ok: true }
+      }
+      return { ok: false, error: res.error }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: message }
+    }
+  }
+
+  function onImageEngineChange(v: ImageEngineId): void {
+    imageEngine.value = v === 'imagemagick' ? 'imagemagick' : 'sharp'
+    persist({ imageEngine: imageEngine.value })
+  }
+
+  /** 设置 ImageMagick 路径；空串=清除覆盖 */
+  async function onSetMagickPath(p: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await window.electronAPI.setMagickPath(p)
+      if (res.ok) {
+        imagemagickPath.value = (p || '').trim()
         return { ok: true }
       }
       return { ok: false, error: res.error }
@@ -493,6 +583,87 @@ export function useSettings(options: UseSettingsOptions = {}) {
     options.onOptionsChange?.()
   }
 
+  function onWatermarkModeChange(v: WatermarkMode): void {
+    watermarkMode.value =
+      v === 'image' || v === 'text' ? v : 'none'
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkImagePathChange(v: string): void {
+    watermarkImagePath.value = typeof v === 'string' ? v : ''
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkTextChange(v: string): void {
+    watermarkText.value = typeof v === 'string' ? v : ''
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkPositionChange(v: WatermarkPosition): void {
+    const ok = [
+      'tl',
+      'tc',
+      'tr',
+      'ml',
+      'mc',
+      'mr',
+      'bl',
+      'bc',
+      'br'
+    ] as const
+    watermarkPosition.value = (ok as readonly string[]).includes(v)
+      ? v
+      : 'br'
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkOpacityChange(v: number): void {
+    watermarkOpacity.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.min(1, v))
+        : 0.8
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkScalePercentChange(v: number): void {
+    watermarkScalePercent.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(1, Math.min(100, v))
+        : 15
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkFontSizeChange(v: number): void {
+    watermarkFontSize.value =
+      typeof v === 'number' && Number.isFinite(v) && v > 0
+        ? Math.round(v)
+        : 24
+    options.onOptionsChange?.()
+  }
+
+  function onWatermarkMarginChange(v: number): void {
+    watermarkMargin.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.round(v))
+        : 16
+    options.onOptionsChange?.()
+  }
+
+  async function onSelectWatermarkImage(): Promise<void> {
+    try {
+      const res = await window.electronAPI.selectImage()
+      if (res.path) {
+        watermarkImagePath.value = res.path
+        if (watermarkMode.value !== 'image') {
+          watermarkMode.value = 'image'
+        }
+        options.onOptionsChange?.()
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   async function onSelectOutput(): Promise<void> {
     const res = await window.electronAPI.selectDirectory()
     if (res.path) {
@@ -545,6 +716,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     persistTasks,
     theme,
     ffmpegBinDir,
+    imageEngine,
+    imagemagickPath,
     closeAction,
     trimStart,
     trimEnd,
@@ -554,6 +727,14 @@ export function useSettings(options: UseSettingsOptions = {}) {
     videoAudioBitrate,
     fps,
     encodePreset,
+    watermarkMode,
+    watermarkImagePath,
+    watermarkText,
+    watermarkPosition,
+    watermarkOpacity,
+    watermarkScalePercent,
+    watermarkFontSize,
+    watermarkMargin,
     custom,
     currentPreset,
     isCustom,
@@ -563,6 +744,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     loadSettings,
     applyLoadedSettings,
     onSetFfmpegBinDir,
+    onImageEngineChange,
+    onSetMagickPath,
     persist,
     persistNow,
     onPresetChange,
@@ -588,6 +771,15 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onVideoAudioBitrateChange,
     onFpsChange,
     onEncodePresetChange,
+    onWatermarkModeChange,
+    onWatermarkImagePathChange,
+    onWatermarkTextChange,
+    onWatermarkPositionChange,
+    onWatermarkOpacityChange,
+    onWatermarkScalePercentChange,
+    onWatermarkFontSizeChange,
+    onWatermarkMarginChange,
+    onSelectWatermarkImage,
     onSelectOutput,
     startWatchers,
     stopWatchers

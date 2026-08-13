@@ -6,7 +6,9 @@ import type {
   EncoderId,
   OutputFormat,
   ProgressPayload,
-  ResolvedEncoder
+  ResolvedEncoder,
+  WatermarkOptions,
+  WatermarkPosition
 } from './types'
 import {
   DEFAULT_AUDIO_BITRATE,
@@ -341,7 +343,7 @@ export function buildRotateFilter(
 }
 
 /**
- * 组合视频滤镜：旋转 → 缩放 → 帧率（最长边限制作用于最终画面）
+ * 组合基础视频滤镜：旋转 → 缩放 → 帧率（不含水印）
  */
 export function buildVideoFilter(options: CompressOptions): string | null {
   const parts: string[] = []
@@ -355,6 +357,203 @@ export function buildVideoFilter(options: CompressOptions): string | null {
   }
   if (parts.length === 0) return null
   return parts.join(',')
+}
+
+/** drawtext 文本转义：\ : ' % */
+export function escapeDrawtext(text: string): string {
+  return String(text ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+    .replace(/%/g, '\\%')
+}
+
+/** filter 路径转义：反斜杠改正斜杠，并转义 : ' */
+export function escapeFilterPath(p: string): string {
+  return String(p ?? '')
+    .replace(/\\/g, '/')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+}
+
+/** 规范化透明度 0–1 */
+export function normalizeOpacity(v: unknown, fallback = 0.8): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(1, n))
+}
+
+/** 规范化边距等非负整数 */
+function normalizeNonNegInt(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 0) return fallback
+  return Math.round(n)
+}
+
+/** 水印时间段 enable 表达式；无有效区间时返回 null */
+export function buildWatermarkEnableExpr(
+  startSec?: number,
+  endSec?: number
+): string | null {
+  const start = normalizeTrimSec(startSec)
+  const end = normalizeTrimSec(endSec)
+  if (start == null && end == null) return null
+  if (start != null && end != null) {
+    if (end <= start) return null
+    return `between(t\\,${start}\\,${end})`
+  }
+  if (start != null) return `gte(t\\,${start})`
+  return `lte(t\\,${end})`
+}
+
+/**
+ * 九宫格 overlay/drawtext 坐标
+ * margin 为像素边距
+ */
+export function buildWatermarkOverlayExpr(
+  pos: WatermarkPosition | undefined,
+  marginX?: number,
+  marginY?: number
+): { x: string; y: string } {
+  const mx = normalizeNonNegInt(marginX, 16)
+  const my = normalizeNonNegInt(marginY, 16)
+  const p = pos || 'br'
+  let x: string
+  let y: string
+  switch (p) {
+    case 'tl':
+      x = String(mx)
+      y = String(my)
+      break
+    case 'tc':
+      x = `(W-w)/2`
+      y = String(my)
+      break
+    case 'tr':
+      x = `W-w-${mx}`
+      y = String(my)
+      break
+    case 'ml':
+      x = String(mx)
+      y = `(H-h)/2`
+      break
+    case 'mc':
+      x = `(W-w)/2`
+      y = `(H-h)/2`
+      break
+    case 'mr':
+      x = `W-w-${mx}`
+      y = `(H-h)/2`
+      break
+    case 'bl':
+      x = String(mx)
+      y = `H-h-${my}`
+      break
+    case 'bc':
+      x = `(W-w)/2`
+      y = `H-h-${my}`
+      break
+    case 'br':
+    default:
+      x = `W-w-${mx}`
+      y = `H-h-${my}`
+      break
+  }
+  return { x, y }
+}
+
+/** 是否有效启用水印（音频模式忽略） */
+export function isWatermarkActive(options: CompressOptions): boolean {
+  if (options.mode === 'audio') return false
+  const wm = options.watermark
+  if (!wm || wm.mode === 'none') return false
+  if (wm.mode === 'image') {
+    return typeof wm.imagePath === 'string' && wm.imagePath.trim().length > 0
+  }
+  if (wm.mode === 'text') {
+    return typeof wm.text === 'string' && wm.text.length > 0
+  }
+  return false
+}
+
+/** 视频滤镜规划（含可选第二输入与 filter_complex） */
+export interface VideoFilterPlan {
+  /** 无第二输入时用 -vf */
+  vf?: string
+  /** 有图片水印时用 filter_complex */
+  filterComplex?: string
+  /** 额外 -i 路径（图片水印） */
+  extraInputs?: string[]
+  /** complex 输出视频标签，如 [vout] */
+  mapVideoLabel?: string
+}
+
+/**
+ * 规划视频滤镜：rotate → scale → fps → watermark
+ * @param fontfile 可选 drawtext 字体路径（由 runner 探测后传入）
+ */
+export function planVideoFilters(
+  options: CompressOptions,
+  opts?: { fontfile?: string }
+): VideoFilterPlan {
+  const base = buildVideoFilter(options)
+  if (!isWatermarkActive(options)) {
+    return base ? { vf: base } : {}
+  }
+
+  const wm = options.watermark as WatermarkOptions
+  const opacity = normalizeOpacity(wm.opacity, 0.8)
+  const { x, y } = buildWatermarkOverlayExpr(wm.position, wm.marginX, wm.marginY)
+  const enable = buildWatermarkEnableExpr(wm.startSec, wm.endSec)
+
+  if (wm.mode === 'text') {
+    const fontSize = normalizeNonNegInt(wm.fontSize, 24) || 24
+    const rawColor = (wm.fontColor || 'white').trim() || 'white'
+    // 去掉可能已带的 @alpha，统一用 opacity
+    const colorBase = rawColor.replace(/@[\d.]+$/i, '')
+    const fontcolor = `${colorBase}@${opacity}`
+    const text = escapeDrawtext(wm.text || '')
+    const parts: string[] = [
+      `text='${text}'`,
+      `x=${x}`,
+      `y=${y}`,
+      `fontsize=${fontSize}`,
+      `fontcolor=${fontcolor}`,
+      'borderw=1',
+      'bordercolor=black@0.4'
+    ]
+    if (opts?.fontfile) {
+      parts.push(`fontfile='${escapeFilterPath(opts.fontfile)}'`)
+    }
+    if (enable) {
+      parts.push(`enable='${enable}'`)
+    }
+    const draw = `drawtext=${parts.join(':')}`
+    const vf = base ? `${base},${draw}` : draw
+    return { vf }
+  }
+
+  // 图片水印：第二输入 + filter_complex
+  const imagePath = (wm.imagePath || '').trim()
+  const pctRaw =
+    typeof wm.scalePercent === 'number' && Number.isFinite(wm.scalePercent)
+      ? wm.scalePercent
+      : 15
+  const pct = Math.max(1, Math.min(100, pctRaw))
+  // 目标宽 ≈ 短边 * pct/100，且不超过原图宽
+  const wmScale = `scale='min(iw,min(iw\\,ih)*${pct}/100)':-1`
+  const enablePart = enable ? `:enable='${enable}'` : ''
+  // shortest=1：以主视频时长为准（配合 -loop 1 的 logo 输入）
+  const wmChain = `[1:v]${wmScale},format=rgba,colorchannelmixer=aa=${opacity}[wm]`
+  const overlay = base
+    ? `[0:v]${base}[base];${wmChain};[base][wm]overlay=x=${x}:y=${y}:shortest=1${enablePart}[vout]`
+    : `${wmChain};[0:v][wm]overlay=x=${x}:y=${y}:shortest=1${enablePart}[vout]`
+
+  return {
+    filterComplex: overlay,
+    extraInputs: [imagePath],
+    mapVideoLabel: '[vout]'
+  }
 }
 
 /** 是否支持经典 -pass 1/2 两遍编码（仅软件 x264 / VP9） */
@@ -399,6 +598,13 @@ export interface BuildCompressArgsCtx {
   pass?: 1 | 2
   /** passlog 文件路径前缀（不含扩展名），两遍时必填 */
   passLogFile?: string
+  /** drawtext 字体文件（由 runner 探测） */
+  fontfile?: string
+  /**
+   * 写出滤镜规划（extraInputs / map 等），供 runner 拼 -i
+   * 调用方传入空对象，函数内写入字段
+   */
+  filterPlanOut?: VideoFilterPlan
 }
 
 /**
@@ -408,6 +614,29 @@ export interface BuildCompressArgsCtx {
  * pass=1：仅视频 + -pass 1 -an，输出由 runner 写到 null
  * pass=2：完整音视频 + -pass 2
  */
+/** 将滤镜计划写入编码参数（-vf 或 -filter_complex + -map） */
+function appendVideoFilterArgs(
+  args: string[],
+  plan: VideoFilterPlan,
+  options: CompressOptions,
+  pass: 1 | 2 | undefined
+): void {
+  if (plan.filterComplex) {
+    args.push('-filter_complex', plan.filterComplex)
+    if (plan.mapVideoLabel) {
+      args.push('-map', plan.mapVideoLabel)
+    }
+    // 有 complex 映射时需显式 map 音频；pass1 / 静音不 map
+    if (pass !== 1 && options.muteAudio !== true) {
+      args.push('-map', '0:a?')
+    }
+    return
+  }
+  if (plan.vf) {
+    args.push('-vf', plan.vf)
+  }
+}
+
 export function buildCompressArgs(
   options: CompressOptions,
   resolved: ResolvedEncoder,
@@ -415,7 +644,10 @@ export function buildCompressArgs(
 ): string[] {
   const args: string[] = []
   const format = options.format || 'mp4'
-  const vf = buildVideoFilter(options)
+  const filterPlan = planVideoFilters(options, { fontfile: ctx?.fontfile })
+  if (ctx?.filterPlanOut) {
+    Object.assign(ctx.filterPlanOut, filterPlan)
+  }
   const quality = mapCrfToHardwareQuality(options.crf)
   const durationSec =
     ctx?.durationSec != null &&
@@ -497,9 +729,7 @@ export function buildCompressArgs(
     } else {
       args.push('-c:a', 'libopus', '-b:a', resolveVideoAudioBitrate(options))
     }
-    if (vf) {
-      args.push('-vf', vf)
-    }
+    appendVideoFilterArgs(args, filterPlan, options, pass)
     // pass1 用 null 容器；pass2 / 单遍用 webm
     if (pass === 1) {
       args.push('-f', 'null')
@@ -655,9 +885,7 @@ export function buildCompressArgs(
     args.push('-c:a', 'aac', '-b:a', resolveVideoAudioBitrate(options))
   }
 
-  if (vf) {
-    args.push('-vf', vf)
-  }
+  appendVideoFilterArgs(args, filterPlan, options, pass)
 
   // 容器相关
   if (pass === 1) {
@@ -687,13 +915,21 @@ export function buildCompressArgsPass(
   options: CompressOptions,
   resolved: ResolvedEncoder,
   pass: 1 | 2,
-  ctx: { durationSec?: number; passLogFile: string; notes?: string[] }
+  ctx: {
+    durationSec?: number
+    passLogFile: string
+    notes?: string[]
+    fontfile?: string
+    filterPlanOut?: VideoFilterPlan
+  }
 ): string[] {
   return buildCompressArgs(options, resolved, {
     durationSec: ctx.durationSec,
     notes: ctx.notes,
     pass,
-    passLogFile: ctx.passLogFile
+    passLogFile: ctx.passLogFile,
+    fontfile: ctx.fontfile,
+    filterPlanOut: ctx.filterPlanOut
   })
 }
 

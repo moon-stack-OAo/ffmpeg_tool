@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {onMounted, onUnmounted, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import type {AppInfo} from '@shared/types'
+import type {AppInfo, ImageEngineStatus} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import DropZone from './components/DropZone.vue'
@@ -52,6 +52,14 @@ const {
   videoAudioBitrate,
   fps,
   encodePreset,
+  watermarkMode,
+  watermarkImagePath,
+  watermarkText,
+  watermarkPosition,
+  watermarkOpacity,
+  watermarkScalePercent,
+  watermarkFontSize,
+  watermarkMargin,
   custom,
   currentPreset,
   isCustom,
@@ -82,13 +90,26 @@ const {
   onVideoAudioBitrateChange,
   onFpsChange,
   onEncodePresetChange,
+  onWatermarkModeChange,
+  onWatermarkImagePathChange,
+  onWatermarkTextChange,
+  onWatermarkPositionChange,
+  onWatermarkOpacityChange,
+  onWatermarkScalePercentChange,
+  onWatermarkFontSizeChange,
+  onWatermarkMarginChange,
+  onSelectWatermarkImage,
   onSelectOutput,
   startWatchers,
   stopWatchers,
   persistTasks,
   ffmpegBinDir,
+  imageEngine,
+  imagemagickPath,
   applyLoadedSettings,
-  onSetFfmpegBinDir
+  onSetFfmpegBinDir,
+  onImageEngineChange,
+  onSetMagickPath
 } = settings
 
 const {
@@ -158,9 +179,18 @@ const {
 })
 
 const appInfo = ref<AppInfo | null>(null)
+const imageStatus = ref<ImageEngineStatus | null>(null)
 const shortcutHelpVisible = ref(false)
 const settingsVisible = ref(false)
 const closeConfirmVisible = ref(false)
+
+async function loadImageStatus(): Promise<void> {
+  try {
+    imageStatus.value = await window.electronAPI.getImageEngineStatus()
+  } catch {
+    imageStatus.value = null
+  }
+}
 
 let cleanupTasks: (() => void) | undefined
 let cleanupUpdater: (() => void) | undefined
@@ -199,6 +229,9 @@ onMounted(async () => {
 
   // 4) FFmpeg 状态 + 编码器探测
   await loadStatus()
+
+  // 4.1) 图片引擎状态
+  await loadImageStatus()
 
   // 5) 版本信息
   await loadVersion()
@@ -286,6 +319,76 @@ async function onClearFfmpegBinDir(): Promise<void> {
   }
 }
 
+async function onBrowseMagickPath(): Promise<void> {
+  const res = await window.electronAPI.selectDirectory()
+  if (!res.path) return
+  const r = await onSetMagickPath(res.path)
+  if (r.ok) {
+    ElMessage.success('已设置 ImageMagick 路径')
+    await loadImageStatus()
+  } else {
+    ElMessage.error(r.error || '设置 ImageMagick 路径失败')
+  }
+}
+
+async function onClearMagickPath(): Promise<void> {
+  const r = await onSetMagickPath('')
+  if (r.ok) {
+    ElMessage.success('已清除 ImageMagick 路径覆盖')
+    await loadImageStatus()
+  } else {
+    ElMessage.error(r.error || '清除失败')
+  }
+}
+
+async function onImageEngineSelect(v: typeof imageEngine.value): Promise<void> {
+  onImageEngineChange(v)
+  await loadImageStatus()
+}
+
+/** 选一张图输出到临时目录，验证当前图片引擎 */
+async function onTestImageEngine(): Promise<void> {
+  try {
+    const pick = await window.electronAPI.selectImage()
+    if (!pick.path) return
+    const inputPath = pick.path
+    const stamp = Date.now()
+    const base =
+      inputPath.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || 'test'
+    const outDir =
+      (typeof window !== 'undefined' &&
+        (appInfo.value?.userDataPath
+          ? `${appInfo.value.userDataPath}\\image-test`
+          : '')) ||
+      ''
+    // 输出路径由主进程确保目录；userData 不可用时用输入同目录
+    const outputPath = outDir
+      ? `${outDir}\\${base}_${stamp}.jpg`
+      : inputPath.replace(/(\.[^.]+)?$/, `_${stamp}.jpg`)
+    const result = await window.electronAPI.processImage({
+      inputPath,
+      outputPath,
+      maxEdge: 1280,
+      format: 'jpeg',
+      quality: 80,
+      strip: true
+    })
+    if (result.ok && result.outputPath) {
+      ElMessage.success(
+        `引擎测试成功（${result.engine || imageEngine.value}）→ ${result.width || '?'}×${result.height || '?'}`
+      )
+      await window.electronAPI.showItemInFolder(result.outputPath)
+      await loadImageStatus()
+    } else {
+      ElMessage.error(result.error || '图片引擎测试失败')
+      await loadImageStatus()
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    ElMessage.error(message || '图片引擎测试失败')
+  }
+}
+
 /** 打开用户数据目录 */
 async function onOpenAppData(): Promise<void> {
   const p = appInfo.value?.userDataPath
@@ -363,6 +466,7 @@ async function onResetSettings(): Promise<void> {
     }
     startTheme()
     await loadStatus()
+    await loadImageStatus()
     if (persistTasks.value !== prevPersistTasks) {
       await loadTasks()
     }
@@ -398,23 +502,31 @@ async function onResetSettings(): Promise<void> {
         :concurrency="concurrency"
         :ffmpeg-bin-dir="ffmpegBinDir"
         :ffmpeg-status="ffmpegStatus"
+        :image-engine="imageEngine"
+        :imagemagick-path="imagemagickPath"
+        :image-status="imageStatus"
         :is-packaged="isPackaged"
         :notify-on-complete="notifyOnComplete"
         :persist-tasks="persistTasks"
         :theme="theme"
         :update-checking="updateChecking"
         @browse-ffmpeg-dir="onBrowseFfmpegDir"
+        @browse-magick-path="onBrowseMagickPath"
         @change-data-dir="onChangeDataDir"
         @check-update="onCheckUpdate"
         @clear-ffmpeg-bin-dir="onClearFfmpegBinDir"
+        @clear-magick-path="onClearMagickPath"
         @clear-stored-tasks="onClearStoredTasks"
         @close-action-change="onCloseActionChange"
         @concurrency-change="onConcurrencyChange"
+        @image-engine-change="onImageEngineSelect"
         @notify-on-complete-change="onNotifyOnCompleteChange"
         @open-app-data="onOpenAppData"
         @persist-tasks-change="onPersistTasksChange"
         @re-detect-ffmpeg="loadStatus"
+        @re-detect-image="loadImageStatus"
         @reset-settings="onResetSettings"
+        @test-image-engine="onTestImageEngine"
         @theme-change="onThemeChange"
     />
 
@@ -465,6 +577,14 @@ async function onResetSettings(): Promise<void> {
         :trim-start="trimStart"
         :two-pass="twoPass"
         :video-audio-bitrate="videoAudioBitrate"
+        :watermark-mode="watermarkMode"
+        :watermark-image-path="watermarkImagePath"
+        :watermark-text="watermarkText"
+        :watermark-position="watermarkPosition"
+        :watermark-opacity="watermarkOpacity"
+        :watermark-scale-percent="watermarkScalePercent"
+        :watermark-font-size="watermarkFontSize"
+        :watermark-margin="watermarkMargin"
         @apply-to-pending="applyOptionsToPending"
         @audio-bitrate-change="onAudioBitrateChange"
         @audio-format-change="onAudioFormatChange"
@@ -480,12 +600,21 @@ async function onResetSettings(): Promise<void> {
         @preset-change="onPresetChange"
         @rotate90-change="onRotate90Change"
         @select-output="onSelectOutput"
+        @select-watermark-image="onSelectWatermarkImage"
         @target-size-mb-change="onTargetSizeMbChange"
         @task-mode-change="onTaskModeChange"
         @trim-end-change="onTrimEndChange"
         @trim-start-change="onTrimStartChange"
         @two-pass-change="onTwoPassChange"
         @video-audio-bitrate-change="onVideoAudioBitrateChange"
+        @watermark-mode-change="onWatermarkModeChange"
+        @watermark-image-path-change="onWatermarkImagePathChange"
+        @watermark-text-change="onWatermarkTextChange"
+        @watermark-position-change="onWatermarkPositionChange"
+        @watermark-opacity-change="onWatermarkOpacityChange"
+        @watermark-scale-percent-change="onWatermarkScalePercentChange"
+        @watermark-font-size-change="onWatermarkFontSizeChange"
+        @watermark-margin-change="onWatermarkMarginChange"
     />
 
     <div class="workspace">

@@ -90,10 +90,18 @@ export function optionsSummary(task: CompressTask): string {
   }
   if (o.trimStart && o.trimStart > 0) parts.push(`裁剪起: ${o.trimStart}s`)
   if (o.trimEnd && o.trimEnd > 0) parts.push(`裁剪止: ${o.trimEnd}s`)
-  if (o.rotate90 === 'cw') parts.push('旋转: 顺时针 90°')
-  if (o.rotate90 === 'ccw') parts.push('旋转: 逆时针 90°')
-  if (o.rotate90 === '180') parts.push('旋转: 180°')
-  if (o.outputDirMode && o.outputDirMode !== 'fixed') {
+    if (o.rotate90 === 'cw') parts.push('旋转: 顺时针 90°')
+    if (o.rotate90 === 'ccw') parts.push('旋转: 逆时针 90°')
+    if (o.rotate90 === '180') parts.push('旋转: 180°')
+    if (o.mode !== 'audio' && o.watermark && o.watermark.mode !== 'none') {
+      if (o.watermark.mode === 'image') {
+        parts.push('水印: 图片')
+      } else if (o.watermark.mode === 'text') {
+        const t = (o.watermark.text || '').slice(0, 20)
+        parts.push(t ? `水印: 文字「${t}」` : '水印: 文字')
+      }
+    }
+    if (o.outputDirMode && o.outputDirMode !== 'fixed') {
     parts.push(`输出目录模式: ${o.outputDirMode}`)
   }
   if (o.nameTemplate) parts.push(`命名: ${o.nameTemplate}`)

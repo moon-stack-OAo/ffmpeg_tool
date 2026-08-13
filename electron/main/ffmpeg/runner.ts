@@ -17,11 +17,13 @@ import {
   estimateEtaSec,
   formatSec,
   isH264Container,
+  isWatermarkActive,
   nullOutputPath,
   parseProgressLine,
   resolveAudioEncoder,
   resolveVideoEncoder,
-  shouldUseTwoPass
+  shouldUseTwoPass,
+  type VideoFilterPlan
 } from '../../../shared/ffmpegLogic'
 import { isHardwareEncoderFailure, mapFfmpegError } from '../../../shared/errorMap'
 import { getFfmpegPath } from './bin'
@@ -144,6 +146,50 @@ function formatCommandLine(ffmpeg: string, args: string[]): string {
   return [quote(ffmpeg), ...args.map(quote)].join(' ')
 }
 
+/** 探测系统可用中文字体（shared 不依赖 fs） */
+function resolveDefaultFontFile(): string | undefined {
+  const candidates: string[] =
+    process.platform === 'win32'
+      ? [
+          'C:\\Windows\\Fonts\\msyh.ttc',
+          'C:\\Windows\\Fonts\\msyh.ttf',
+          'C:\\Windows\\Fonts\\simhei.ttf',
+          'C:\\Windows\\Fonts\\arial.ttf'
+        ]
+      : process.platform === 'darwin'
+        ? [
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/Library/Fonts/Arial.ttf',
+            '/System/Library/Fonts/Supplemental/Arial.ttf'
+          ]
+        : [
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'
+          ]
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p
+    } catch {
+      // ignore
+    }
+  }
+  return undefined
+}
+
+/** 校验图片水印路径；无效时返回错误文案 */
+function validateWatermarkImage(options: CompressOptions): string | null {
+  if (options.mode === 'audio') return null
+  const wm = options.watermark
+  if (!wm || wm.mode !== 'image') return null
+  const p = typeof wm.imagePath === 'string' ? wm.imagePath.trim() : ''
+  if (!p) return '图片水印路径为空'
+  if (!fs.existsSync(p)) return `水印图片不存在: ${p}`
+  return null
+}
+
 interface RunOnceParams {
   ffmpeg: string
   taskId: string
@@ -154,6 +200,8 @@ interface RunOnceParams {
   resolved: string
   /** 编码参数（已按模式构建） */
   encodeArgs: string[]
+  /** 额外输入（如图片水印），在主视频 -i 之后插入 */
+  extraInputs?: string[]
   duration: number
   onProgress: (payload: ProgressPayload) => void
   signal?: { cancelled: boolean }
@@ -168,6 +216,7 @@ function runOnce(params: RunOnceParams): Promise<RunCompressResult> {
     outputPath,
     resolved,
     encodeArgs,
+    extraInputs,
     duration,
     onProgress,
     signal
@@ -175,6 +224,13 @@ function runOnce(params: RunOnceParams): Promise<RunCompressResult> {
 
   // 裁剪：-ss 优先放在 -i 前加速 seek；-to 放在 -i 后
   const seek = buildSeekArgs(params.options)
+  // 图片水印：-loop 1 使静态图持续到主视频结束
+  const extraInputArgs: string[] = []
+  if (extraInputs?.length) {
+    for (const p of extraInputs) {
+      extraInputArgs.push('-loop', '1', '-i', p)
+    }
+  }
   // 注意 Windows 路径含空格时 spawn 参数数组形式最安全，无需额外引号
   const args = [
     '-y',
@@ -182,6 +238,7 @@ function runOnce(params: RunOnceParams): Promise<RunCompressResult> {
     ...seek.beforeInput,
     '-i',
     inputPath,
+    ...extraInputArgs,
     ...seek.afterInput,
     ...encodeArgs,
     '-progress',
@@ -406,6 +463,14 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     }
   }
 
+  const wmErr = validateWatermarkImage(options)
+  if (wmErr) {
+    return {
+      code: 1,
+      error: mapFfmpegError(wmErr, { inputPath, outputPath })
+    }
+  }
+
   // 确保输出目录存在
   const outDir = path.dirname(outputPath)
   if (!fs.existsSync(outDir)) {
@@ -416,7 +481,13 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
   const sourceDuration = await probeDuration(inputPath)
   // 进度用裁剪后的有效时长
   const duration = effectiveDuration(options, sourceDuration)
-  const compressCtx = { durationSec: duration }
+  const fontfile =
+    !isAudio &&
+    isWatermarkActive(options) &&
+    options.watermark?.mode === 'text'
+      ? resolveDefaultFontFile()
+      : undefined
+  const compressCtx = { durationSec: duration, fontfile }
 
   // —— 仅抽取音频：不探测硬件、不回退 x264 ——
   if (isAudio) {
@@ -502,9 +573,11 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     if (!wantTwoPass) {
       // 硬件 + 目标体积：单遍 ABR，可在 commandLine 侧说明
       const notes: string[] = []
+      const filterPlanOut: VideoFilterPlan = {}
       const encodeArgs = buildCompressArgs(options, enc, {
         ...compressCtx,
-        notes
+        notes,
+        filterPlanOut
       })
       if (
         typeof options.targetSizeMb === 'number' &&
@@ -521,6 +594,7 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
         options,
         resolved: enc,
         encodeArgs,
+        extraInputs: filterPlanOut.extraInputs,
         duration,
         onProgress: report,
         signal
@@ -541,12 +615,17 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     const passCtx = {
       durationSec: duration,
       passLogFile,
-      notes
+      notes,
+      fontfile: compressCtx.fontfile
     }
 
     try {
       // pass1：0–45%
-      const pass1Args = buildCompressArgsPass(options, enc, 1, passCtx)
+      const pass1Plan: VideoFilterPlan = {}
+      const pass1Args = buildCompressArgsPass(options, enc, 1, {
+        ...passCtx,
+        filterPlanOut: pass1Plan
+      })
       const pass1 = await runOnce({
         ffmpeg,
         taskId,
@@ -555,6 +634,7 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
         options,
         resolved: enc,
         encodeArgs: pass1Args,
+        extraInputs: pass1Plan.extraInputs,
         duration,
         onProgress: (p) => report(mapProgressRange(p, 0, 45)),
         signal
@@ -569,7 +649,11 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
       }
 
       // pass2：45–100%
-      const pass2Args = buildCompressArgsPass(options, enc, 2, passCtx)
+      const pass2Plan: VideoFilterPlan = {}
+      const pass2Args = buildCompressArgsPass(options, enc, 2, {
+        ...passCtx,
+        filterPlanOut: pass2Plan
+      })
       const pass2 = await runOnce({
         ffmpeg,
         taskId,
@@ -578,6 +662,7 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
         options,
         resolved: enc,
         encodeArgs: pass2Args,
+        extraInputs: pass2Plan.extraInputs,
         duration,
         onProgress: (p) => report(mapProgressRange(p, 45, 55)),
         signal

@@ -1,9 +1,20 @@
 import {app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray} from 'electron'
 import {basename, extname, join} from 'path'
 import {existsSync} from 'fs'
-import type {AppSettings, CloseAction, CompressTask} from '../../shared/types'
+import type {
+  AppSettings,
+  CloseAction,
+  CompressTask,
+  ImageProcessOptions
+} from '../../shared/types'
 import {IpcChannels, VIDEO_EXTENSIONS} from '../../shared/types'
 import {checkFfmpegAvailable, detectHardwareEncoders, setBinaryOverride} from './ffmpeg'
+import {
+  getImageEngineStatus,
+  processImage,
+  setImageEngine,
+  setMagickPath
+} from './image'
 import {collectVideoFiles} from './mediaScan'
 import {getSettings, loadSettings, resetSettings, saveSettings} from './settings'
 import {clearStoredTasks, loadTasks, saveTasks} from './taskStore'
@@ -322,6 +333,27 @@ function registerIpc(): void {
     return { path: result.filePaths[0] }
   })
 
+  ipcMain.handle(IpcChannels.SELECT_IMAGE, async () => {
+    if (!mainWindow) return { path: null }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择水印图片',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: '图片',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
+        },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || !result.filePaths.length) {
+      return { path: null }
+    }
+    return { path: result.filePaths[0] }
+  })
+
   ipcMain.handle(IpcChannels.GET_FFMPEG_STATUS, async () => {
     return checkFfmpegAvailable()
   })
@@ -365,17 +397,28 @@ function registerIpc(): void {
         delete part.ffmpegBinDir
       }
     }
+    if (typeof part.imagemagickPath === 'string') {
+      const magick = setMagickPath(part.imagemagickPath)
+      if (!magick.accepted) {
+        delete part.imagemagickPath
+      }
+    }
     const next = saveSettings(part)
     if (typeof part.concurrency === 'number') {
       taskQueue.setConcurrency(next.concurrency)
     }
+    if (typeof part.imageEngine === 'string') {
+      setImageEngine(next.imageEngine)
+    }
     return next
   })
 
-  // 重置全部设置为默认（删除设置文件、清除 ffmpeg 目录覆盖）
+  // 重置全部设置为默认（删除设置文件、清除 ffmpeg / magick 覆盖）
   ipcMain.handle(IpcChannels.SETTINGS_RESET, async () => {
     const next = resetSettings()
     setBinaryOverride('')
+    setMagickPath('')
+    setImageEngine(next.imageEngine)
     return next
   })
 
@@ -387,6 +430,27 @@ function registerIpc(): void {
       return { ok: false, error: override.error }
     }
     saveSettings({ ffmpegBinDir: value })
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.IMAGE_STATUS, async () => {
+    return getImageEngineStatus()
+  })
+
+  ipcMain.handle(
+    IpcChannels.IMAGE_PROCESS,
+    async (_e, options: ImageProcessOptions) => {
+      return processImage(options || ({} as ImageProcessOptions))
+    }
+  )
+
+  ipcMain.handle(IpcChannels.IMAGE_SET_MAGICK_PATH, async (_e, p: string) => {
+    const value = typeof p === 'string' ? p.trim() : ''
+    const result = setMagickPath(value)
+    if (!result.accepted) {
+      return { ok: false, error: result.error }
+    }
+    saveSettings({ imagemagickPath: value })
     return { ok: true }
   })
 
@@ -632,6 +696,8 @@ app.whenReady().then(() => {
   const settings = loadSettings()
   // 启动即应用用户自定义 ffmpeg bin 目录（无效时回退自动探测）
   setBinaryOverride(settings.ffmpegBinDir)
+  setMagickPath(settings.imagemagickPath || '')
+  setImageEngine(settings.imageEngine || 'sharp')
   taskQueue.setConcurrency(settings.concurrency)
   registerIpc()
   registerUpdaterIpc()

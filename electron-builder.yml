@@ -9,6 +9,8 @@ files:
 asarUnpack:
   - node_modules/ffmpeg-static/**
   - node_modules/ffprobe-static/**
+  - node_modules/sharp/**
+  - node_modules/@img/**
 # 托盘/窗口运行时图标（打包后位于 process.resourcesPath/icons）
 extraResources:
   - from: resources

@@ -123,7 +123,77 @@ export interface CompressOptions {
   fps?: FpsMode
   /** x264 编码速度；仅 libx264 生效，默认 medium */
   encodePreset?: EncodePreset
+  /** 水印（仅视频压缩；mode=audio 时忽略） */
+  watermark?: WatermarkOptions
 }
+
+/** 水印模式 */
+export type WatermarkMode = 'none' | 'image' | 'text'
+
+/** 水印九宫格位置 */
+export type WatermarkPosition =
+  | 'tl'
+  | 'tc'
+  | 'tr'
+  | 'ml'
+  | 'mc'
+  | 'mr'
+  | 'bl'
+  | 'bc'
+  | 'br'
+
+/** 水印选项 */
+export interface WatermarkOptions {
+  mode: WatermarkMode
+  /** 图片水印本地路径 */
+  imagePath?: string
+  /** 文字内容 */
+  text?: string
+  /** 字号，默认 24 */
+  fontSize?: number
+  /** 颜色，默认 white */
+  fontColor?: string
+  /** 位置，默认 br */
+  position?: WatermarkPosition
+  /** 水平边距，默认 16 */
+  marginX?: number
+  /** 垂直边距，默认 16 */
+  marginY?: number
+  /** 透明度 0–1，默认 0.8 */
+  opacity?: number
+  /** 相对视频短边的宽度百分比（图片），默认 15 */
+  scalePercent?: number
+  /** 水印出现起始秒 */
+  startSec?: number
+  /** 水印出现结束秒 */
+  endSec?: number
+}
+
+/** 水印模式选项（UI） */
+export const WATERMARK_MODE_OPTIONS: ReadonlyArray<{
+  value: WatermarkMode
+  label: string
+}> = [
+  { value: 'none', label: '无' },
+  { value: 'image', label: '图片' },
+  { value: 'text', label: '文字' }
+]
+
+/** 水印位置选项（UI） */
+export const WATERMARK_POSITION_OPTIONS: ReadonlyArray<{
+  value: WatermarkPosition
+  label: string
+}> = [
+  { value: 'tl', label: '左上' },
+  { value: 'tc', label: '中上' },
+  { value: 'tr', label: '右上' },
+  { value: 'ml', label: '左中' },
+  { value: 'mc', label: '正中' },
+  { value: 'mr', label: '右中' },
+  { value: 'bl', label: '左下' },
+  { value: 'bc', label: '中下' },
+  { value: 'br', label: '右下' }
+]
 
 /** 画面旋转方向 */
 export type Rotate90 = 'none' | 'cw' | 'ccw' | '180'
@@ -382,7 +452,61 @@ export interface AppSettings {
    * - quit：直接退出应用
    */
   closeAction: CloseAction
+  /** 图片处理引擎，默认 sharp */
+  imageEngine: ImageEngineId
+  /**
+   * ImageMagick 路径：空=自动探测 PATH；
+   * 可为 magick(.exe) 全路径，或含 magick 的目录
+   */
+  imagemagickPath: string
 }
+
+/** 图片处理引擎 */
+export type ImageEngineId = 'sharp' | 'imagemagick'
+
+/** 图片引擎就绪状态 */
+export interface ImageEngineStatus {
+  engine: ImageEngineId
+  sharpReady: boolean
+  magickReady: boolean
+  magickPath?: string
+  error?: string
+}
+
+/** 图片处理选项 */
+export interface ImageProcessOptions {
+  inputPath: string
+  outputPath: string
+  /** 最长边，0=不缩放 */
+  maxEdge?: number
+  format?: 'jpeg' | 'png' | 'webp' | 'keep'
+  /** 1–100，jpeg/webp */
+  quality?: number
+  /** 去掉元数据，默认 true */
+  strip?: boolean
+}
+
+/** 图片处理结果 */
+export interface ImageProcessResult {
+  ok: boolean
+  outputPath?: string
+  width?: number
+  height?: number
+  size?: number
+  engine?: ImageEngineId
+  error?: string
+  /** magick 时可选完整命令行 */
+  commandLine?: string
+}
+
+/** 图片引擎选项（UI） */
+export const IMAGE_ENGINE_OPTIONS: ReadonlyArray<{
+  value: ImageEngineId
+  label: string
+}> = [
+  { value: 'sharp', label: 'Sharp（内置，推荐）' },
+  { value: 'imagemagick', label: 'ImageMagick' }
+]
 
 /** 应用信息（设置抽屉「关于」展示） */
 export interface AppInfo {
@@ -399,6 +523,8 @@ export const IpcChannels = {
   // 渲染 → 主
   SELECT_FILES: 'dialog:select-files',
   SELECT_DIR: 'dialog:select-dir',
+  /** 选择单张水印图片 */
+  SELECT_IMAGE: 'dialog:select-image',
   GET_FFMPEG_STATUS: 'ffmpeg:status',
   DETECT_ENCODERS: 'ffmpeg:detect-encoders',
   START_TASK: 'task:start',
@@ -412,6 +538,12 @@ export const IpcChannels = {
   SETTINGS_RESET: 'settings:reset',
   /** 设置自定义 ffmpeg bin 目录（空串=清除覆盖） */
   FFMPEG_SET_BIN_DIR: 'ffmpeg:set-bin-dir',
+  /** 图片引擎状态 */
+  IMAGE_STATUS: 'image:status',
+  /** 图片处理（resize/转码） */
+  IMAGE_PROCESS: 'image:process',
+  /** 设置 ImageMagick 路径（空串=自动探测） */
+  IMAGE_SET_MAGICK_PATH: 'image:set-magick-path',
   /** 清空已持久化任务 */
   TASKS_CLEAR: 'tasks:clear',
   /** 应用信息（设置抽屉「关于」） */
@@ -638,6 +770,8 @@ export function formatSaveRatio(
 export interface ElectronAPI {
   selectFiles: () => Promise<AddFilesResult>
   selectDirectory: () => Promise<SelectDirResult>
+  /** 选择水印图片（单选 png/jpg/webp/bmp） */
+  selectImage: () => Promise<{ path: string | null }>
   getFfmpegStatus: () => Promise<FfmpegStatus>
   detectEncoders: () => Promise<EncoderDetectResult>
   /** 从 File 取本地路径（Electron 对经 bridge 的 File 有特殊处理） */
@@ -655,6 +789,15 @@ export interface ElectronAPI {
    * 空串 dir = 清除覆盖，回退自动探测（ffmpeg-static）
    */
   setFfmpegBinDir: (dir: string) => Promise<{ ok: boolean; error?: string }>
+  /** 图片引擎状态（sharp / ImageMagick） */
+  getImageEngineStatus: () => Promise<ImageEngineStatus>
+  /** 图片处理：缩放最长边、转 jpeg/png/webp、quality */
+  processImage: (options: ImageProcessOptions) => Promise<ImageProcessResult>
+  /**
+   * 设置 ImageMagick 路径（magick 全路径或所在目录）
+   * 空串 = 清除覆盖，回退 PATH 自动探测
+   */
+  setMagickPath: (path: string) => Promise<{ ok: boolean; error?: string }>
   /** 清空已持久化的任务列表 */
   clearStoredTasks: () => Promise<{ ok: boolean; error?: string }>
   /** 重置全部设置为默认值，返回重置后的设置 */

@@ -27,18 +27,30 @@ let allowQuit = false
 /** 关闭询问中，避免重复弹窗 */
 let closeAskPending = false
 
-/** 开发态用 build 目录图标；打包后由安装包/exe 承载品牌图标 */
-function resolveWindowIcon(): string | undefined {
-  const candidates = [
-    join(__dirname, '../../build/icon.ico'),
-    join(__dirname, '../../build/icon.png'),
-    join(__dirname, '../../resources/icon.ico'),
-    join(__dirname, '../../resources/icon.png')
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) return p
+/** 图标搜索根目录：打包后在 process.resourcesPath/icons，开发态用仓库 resources/build */
+function iconSearchRoots(): string[] {
+  if (app.isPackaged) {
+    return [join(process.resourcesPath, 'icons'), process.resourcesPath]
+  }
+  return [join(__dirname, '../../resources'), join(__dirname, '../../build')]
+}
+
+function resolveIconPath(names: string[]): string | undefined {
+  for (const root of iconSearchRoots()) {
+    for (const name of names) {
+      const p = join(root, name)
+      if (existsSync(p)) return p
+    }
   }
   return undefined
+}
+
+/** 窗口图标；打包后优先 extraResources，其次 exe 内嵌图标 */
+function resolveWindowIcon(): string | undefined {
+  return (
+    resolveIconPath(['icon.ico', 'icon.png', 'icon-256.png', 'icon-128.png']) ||
+    (app.isPackaged ? process.execPath : undefined)
+  )
 }
 
 function showMainWindow(): void {
@@ -66,26 +78,52 @@ function quitApp(): void {
   app.quit()
 }
 
-/** 托盘优先用小尺寸图标，避免 Windows 托盘模糊/过大 */
-function resolveTrayIcon(): Electron.NativeImage {
-  const candidates = [
-    join(__dirname, '../../resources/icon-16.png'),
-    join(__dirname, '../../resources/icon-24.png'),
-    join(__dirname, '../../resources/icon-32.png'),
-    join(__dirname, '../../build/icon.png'),
-    join(__dirname, '../../resources/icon.png'),
-    join(__dirname, '../../build/icon.ico'),
-    join(__dirname, '../../resources/icon.ico')
-  ]
-  for (const p of candidates) {
-    if (!existsSync(p)) continue
-    const img = nativeImage.createFromPath(p)
-    if (!img.isEmpty()) {
-      // Windows 托盘约 16px；过大时缩放到 16 更清晰
-      if (img.getSize().width > 32) {
-        return img.resize({ width: 16, height: 16, quality: 'best' })
+function normalizeTrayImage(img: Electron.NativeImage): Electron.NativeImage {
+  if (img.isEmpty()) return img
+  // Windows 托盘约 16–32px；过大时缩到 32，高 DPI 更清晰
+  const { width } = img.getSize()
+  if (width > 32) {
+    return img.resize({ width: 32, height: 32, quality: 'best' })
+  }
+  return img
+}
+
+/** 托盘优先小尺寸 PNG；打包后读 extraResources，再回退 exe 图标 */
+function resolveTrayIconSync(): Electron.NativeImage {
+  const names = ['icon-32.png', 'icon-24.png', 'icon-16.png', 'icon.ico', 'icon.png']
+  for (const root of iconSearchRoots()) {
+    for (const name of names) {
+      const p = join(root, name)
+      if (!existsSync(p)) continue
+      try {
+        const img = normalizeTrayImage(nativeImage.createFromPath(p))
+        if (!img.isEmpty()) return img
+      } catch {
+        // 忽略无法解析的路径
       }
-      return img
+    }
+  }
+  if (app.isPackaged) {
+    try {
+      const fromExe = normalizeTrayImage(nativeImage.createFromPath(process.execPath))
+      if (!fromExe.isEmpty()) return fromExe
+    } catch {
+      // ignore
+    }
+  }
+  return nativeImage.createEmpty()
+}
+
+async function resolveTrayIcon(): Promise<Electron.NativeImage> {
+  const sync = resolveTrayIconSync()
+  if (!sync.isEmpty()) return sync
+  // 打包后最后手段：系统读取 exe 文件图标
+  if (app.isPackaged) {
+    try {
+      const fromSystem = await app.getFileIcon(process.execPath, { size: 'small' })
+      return normalizeTrayImage(fromSystem)
+    } catch {
+      // ignore
     }
   }
   return nativeImage.createEmpty()
@@ -122,13 +160,21 @@ function buildTrayMenu(): Menu {
 
 function ensureTray(): void {
   if (tray) return
-  const image = resolveTrayIcon()
-  tray = new Tray(image)
+  // 先用同步路径创建，避免 hide 时无托盘；图标异步再校正
+  const placeholder = resolveTrayIconSync()
+  tray = new Tray(placeholder.isEmpty() ? nativeImage.createEmpty() : placeholder)
   tray.setToolTip(`${PRODUCT_NAME} v${app.getVersion()}`)
   tray.setContextMenu(buildTrayMenu())
   // Windows：左键打开主窗口，右键系统菜单
   tray.on('click', () => showMainWindow())
   tray.on('double-click', () => showMainWindow())
+
+  if (placeholder.isEmpty()) {
+    void resolveTrayIcon().then((image) => {
+      if (!tray || image.isEmpty()) return
+      tray.setImage(image)
+    })
+  }
 }
 
 function handleCloseRequest(): void {

@@ -9,7 +9,20 @@ files:
 asarUnpack:
   - node_modules/ffmpeg-static/**
   - node_modules/ffprobe-static/**
-extraResources: [ ]
+# 托盘/窗口运行时图标（打包后位于 process.resourcesPath/icons）
+extraResources:
+  - from: resources
+    to: icons
+    filter:
+      - icon-16.png
+      - icon-24.png
+      - icon-32.png
+      - icon-48.png
+      - icon-64.png
+      - icon-128.png
+      - icon-256.png
+      - icon.ico
+      - icon.png
 # 自动更新：从 GitHub Releases 拉取 latest.yml / 安装包
 publish:
   provider: github

@@ -7,6 +7,12 @@ import { PRODUCT_NAME } from '@shared/brand'
 const props = defineProps<{
   appVersion: string
   ffmpegStatus: FfmpegStatus
+  /** 有可用更新时在版本旁显示 NEW */
+  updateAvailable?: boolean
+  /** 远端版本号，用于 tooltip */
+  updateVersion?: string
+  /** 已下载待安装 */
+  updateDownloaded?: boolean
 }>()
 
 const ffmpegReady = computed(() => Boolean(props.ffmpegStatus?.ready))
@@ -19,9 +25,22 @@ const ffmpegTip = computed(() => {
   return props.ffmpegStatus?.error || 'FFmpeg 未就绪'
 })
 
+const showUpdateBadge = computed(
+  () => Boolean(props.updateAvailable || props.updateDownloaded)
+)
+const updateBadgeLabel = computed(() =>
+  props.updateDownloaded ? '就绪' : 'NEW'
+)
+const updateBadgeTip = computed(() => {
+  const ver = props.updateVersion ? ` v${props.updateVersion}` : ''
+  if (props.updateDownloaded) return `更新已下载${ver}，点击安装`
+  return `发现新版本${ver}，点击查看`
+})
+
 const emit = defineEmits<{
   openSettings: []
   showShortcuts: []
+  openUpdate: []
 }>()
 
 const maximized = ref(false)
@@ -62,6 +81,16 @@ async function close(): Promise<void> {
       <div class="title-bar-text">
         <span class="title-bar-name">{{ PRODUCT_NAME }}</span>
         <span class="title-bar-ver">v{{ appVersion }}</span>
+        <button
+          v-if="showUpdateBadge"
+          type="button"
+          class="title-bar-new"
+          :class="{ 'is-ready': updateDownloaded }"
+          :title="updateBadgeTip"
+          @click.stop="emit('openUpdate')"
+        >
+          {{ updateBadgeLabel }}
+        </button>
       </div>
       <span
         class="title-bar-status"
@@ -166,6 +195,65 @@ async function close(): Promise<void> {
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   opacity: 0.9;
+}
+
+.title-bar-new {
+  margin: 0 0 0 2px;
+  padding: 0 6px;
+  height: 16px;
+  border: none;
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #fff;
+  background: linear-gradient(135deg, #1b4dff 0%, #0ea5e9 55%, #14b8a6 100%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #0ea5e9 35%, transparent);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition:
+    transform 0.12s,
+    filter 0.12s,
+    box-shadow 0.12s;
+  animation: title-bar-new-pulse 2.4s ease-in-out infinite;
+}
+
+.title-bar-new:hover {
+  filter: brightness(1.08);
+  transform: translateY(-0.5px);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #14b8a6 45%, transparent);
+}
+
+.title-bar-new:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+.title-bar-new:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.title-bar-new.is-ready {
+  background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 40%, transparent);
+  animation: none;
+}
+
+@keyframes title-bar-new-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, #0ea5e9 35%, transparent),
+      0 0 0 0 color-mix(in srgb, #0ea5e9 0%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, #0ea5e9 45%, transparent),
+      0 0 0 4px color-mix(in srgb, #0ea5e9 18%, transparent);
+  }
 }
 
 .title-bar-status {

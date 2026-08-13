@@ -490,8 +490,14 @@ async function onResetSettings(): Promise<void> {
     <TitleBar
         :app-version="appVersion"
         :ffmpeg-status="ffmpegStatus"
+        :update-available="
+          updateInfo.state === 'available' || updateInfo.state === 'downloading'
+        "
+        :update-downloaded="updateInfo.state === 'downloaded'"
+        :update-version="updateInfo.version"
         @open-settings="settingsVisible = true"
         @show-shortcuts="shortcutHelpVisible = true"
+        @open-update="updateDialogVisible = true"
     />
 
     <SettingsDrawer

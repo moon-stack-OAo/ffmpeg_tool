@@ -33,7 +33,7 @@ const updateBadgeLabel = computed(() =>
 )
 const updateBadgeTip = computed(() => {
   const ver = props.updateVersion ? ` v${props.updateVersion}` : ''
-  if (props.updateDownloaded) return `更新已下载${ver}，点击安装`
+  if (props.updateDownloaded) return `更新已下载${ver}，点击重启并安装`
   return `发现新版本${ver}，点击查看`
 })
 

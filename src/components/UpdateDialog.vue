@@ -265,7 +265,7 @@ function inlineHtml(text: string): string {
         </div>
 
         <div
-          v-if="updateInfo.message"
+          v-if="updateInfo.message && state !== 'downloading'"
           class="update-msg"
           :class="{
             'is-error': state === 'error',

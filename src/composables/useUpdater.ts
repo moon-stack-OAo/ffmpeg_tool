@@ -12,9 +12,14 @@ export function useUpdater() {
   const updateInfo = ref<UpdateStatusPayload>({ state: 'idle' })
 
   function applyUpdateStatus(payload: UpdateStatusPayload): void {
+    const prev = updateInfo.value
     updateInfo.value = {
+      ...prev,
       ...payload,
-      currentVersion: payload.currentVersion || appVersion.value
+      // 进度事件不带 version，保留 available 时的远端版本
+      version: payload.version ?? prev.version,
+      releaseNotes: payload.releaseNotes ?? prev.releaseNotes,
+      currentVersion: payload.currentVersion || prev.currentVersion || appVersion.value
     }
     updateChecking.value = payload.state === 'checking'
     updateDownloading.value = payload.state === 'downloading'

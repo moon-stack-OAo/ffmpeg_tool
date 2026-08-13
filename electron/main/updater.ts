@@ -36,7 +36,8 @@ export function initAutoUpdater(win: BrowserWindow): void {
     initialized = true
 
     autoUpdater.autoDownload = false
-    autoUpdater.autoInstallOnAppQuit = true
+    // 仅用户点击「重启并安装」时安装，普通退出不装
+    autoUpdater.autoInstallOnAppQuit = false
     // 允许未签名包检查更新（正式分发建议配置代码签名）
     autoUpdater.allowPrerelease = false
     autoUpdater.allowDowngrade = false
@@ -72,8 +73,8 @@ export function initAutoUpdater(win: BrowserWindow): void {
             percent: Math.round(p.percent * 10) / 10,
             transferred: p.transferred,
             total: p.total,
-            bytesPerSecond: p.bytesPerSecond,
-            message: `下载中 ${Math.round(p.percent)}%`
+            bytesPerSecond: p.bytesPerSecond
+            // 百分比仅由进度条展示，避免与 message 重复
         })
     })
 
@@ -83,7 +84,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
             state: 'downloaded',
             version: info.version,
             releaseNotes: normalizeReleaseNotes(info.releaseNotes),
-            message: `新版本 v${info.version} 已下载，重启后安装`
+            message: `新版本 v${info.version} 已下载，请点击「重启并安装」；普通退出不会安装`
         })
     })
 
@@ -171,7 +172,7 @@ export function quitAndInstall(): { ok: boolean; error?: string } {
     if (!updateDownloaded) {
         return {ok: false, error: '尚未下载完成，无法安装'}
     }
-    // isSilent=false, isForceRunAfter=true
+    // isSilent=true 静默安装；isForceRunAfter=true 装完自动启动
     autoUpdater.quitAndInstall(true, true)
     return {ok: true}
 }

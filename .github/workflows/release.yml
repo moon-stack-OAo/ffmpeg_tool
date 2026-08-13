@@ -74,7 +74,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: FFmpeg视频压缩工具 v${{ steps.ver.outputs.version }}
+          name: 轻影 v${{ steps.ver.outputs.version }}
           draft: false
           # 以 CHANGELOG 当前版本小节为主；关闭自动生成以免冲掉中文说明
           generate_release_notes: false
@@ -141,7 +141,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: FFmpeg视频压缩工具 v${{ steps.ver.outputs.version }}
+          name: 轻影 v${{ steps.ver.outputs.version }}
           draft: false
           generate_release_notes: false
           body_path: release-notes.md

@@ -115,7 +115,7 @@ function parseReleaseNotes(raw?: string): NotesBlock[] {
   }
 
   // 去掉顶层大标题（与弹窗版本信息重复）
-  text = text.replace(/^#\s+FFmpeg[^\n]*\n+/i, '')
+  text = text.replace(/^#\s+(?:轻影|FFmpeg)[^\n]*\n+/i, '')
 
   const lines = text.split('\n')
   const blocks: NotesBlock[] = []

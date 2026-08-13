@@ -106,6 +106,17 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
   )
   return known ? known.value : '__custom__'
 }
+
+function encoderTitle(isWebm: boolean, info: EncoderDetectResult | null): string {
+  if (isWebm) return 'WebM 强制软件 VP9'
+  if (!info) return ''
+  const found: string[] = []
+  if (info.nvenc) found.push('NVENC')
+  if (info.qsv) found.push('QSV')
+  if (info.amf) found.push('AMF')
+  if (info.videotoolbox) found.push('VT')
+  return found.length ? `硬件: ${found.join(' ')}` : '硬件: 未检测到'
+}
 </script>
 
 <template>
@@ -258,13 +269,64 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
       >
         <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
         <span>高级选项</span>
-        <span class="muted">编码器 · 静音 · 兼容档 · 音轨 · 帧率 · 旋转 · 目标体积</span>
+        <span class="muted">{{ isAudioMode ? '并发 · 裁剪' : '编码 · 画面 · 音频 · 裁剪' }}</span>
       </button>
 
       <div v-show="advancedOpen" id="opt-advanced-body" class="opt-advanced-body">
-        <div class="opt-row opt-row-wrap">
-          <template v-if="!isAudioMode">
-            <div class="opt-item">
+        <template v-if="isAudioMode">
+          <div class="opt-row">
+            <div class="opt-item" :title="CONCURRENCY_HINT">
+              <span class="label">并发数</span>
+              <el-select
+                :model-value="concurrency"
+                size="small"
+                class="w-xs"
+                @change="(v: number) => emit('concurrencyChange', v)"
+              >
+                <el-option
+                  v-for="n in CONCURRENCY_OPTIONS"
+                  :key="n"
+                  :label="String(n)"
+                  :value="n"
+                />
+              </el-select>
+            </div>
+
+            <div class="opt-divider" aria-hidden="true" />
+
+            <div class="opt-item" title="0 = 不裁剪 / 到结尾">
+              <span class="label">裁剪</span>
+              <span class="hint-inline">开始(秒)</span>
+              <el-input-number
+                :model-value="trimStart"
+                :min="0"
+                :max="86400"
+                :step="1"
+                :precision="1"
+                size="small"
+                controls-position="right"
+                class="w-lg"
+                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+              />
+              <span class="hint-inline">结束(秒)</span>
+              <el-input-number
+                :model-value="trimEnd"
+                :min="0"
+                :max="86400"
+                :step="1"
+                :precision="1"
+                size="small"
+                controls-position="right"
+                class="w-lg"
+                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="opt-row">
+            <div class="opt-item" :title="encoderTitle(isWebm, encoderInfo)">
               <span class="label">编码器</span>
               <el-select
                 :disabled="isWebm"
@@ -280,37 +342,12 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
                   :value="opt.value"
                 />
               </el-select>
-              <span v-if="isWebm" class="hint-inline">WebM 强制软件 VP9</span>
-              <span v-else-if="encoderInfo" class="hint-inline">
-                硬件:
-                <template
-                  v-if="
-                    encoderInfo.nvenc ||
-                    encoderInfo.qsv ||
-                    encoderInfo.amf ||
-                    encoderInfo.videotoolbox
-                  "
-                >
-                  <span v-if="encoderInfo.nvenc">NVENC </span>
-                  <span v-if="encoderInfo.qsv">QSV </span>
-                  <span v-if="encoderInfo.amf">AMF </span>
-                  <span v-if="encoderInfo.videotoolbox">VT</span>
-                </template>
-                <template v-else>未检测到</template>
-              </span>
             </div>
 
-            <div class="opt-item">
-              <span class="label">静音</span>
-              <el-switch
-                :model-value="muteAudio"
-                size="small"
-                @change="(v: string | number | boolean) => emit('muteAudioChange', Boolean(v))"
-              />
-              <span class="hint-inline">去掉音轨</span>
-            </div>
-
-            <div class="opt-item">
+            <div
+              class="opt-item"
+              :title="isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信'"
+            >
               <span class="label">兼容档</span>
               <el-select
                 :disabled="isWebm"
@@ -326,22 +363,59 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
                   :value="opt.value"
                 />
               </el-select>
-              <span class="hint-inline">{{ isWebm ? 'WebM 不适用' : 'Main@L4 利于旧设备/微信' }}</span>
             </div>
 
-            <div v-if="!muteAudio" class="opt-item">
-              <span class="label">音轨码率</span>
+            <div class="opt-divider" aria-hidden="true" />
+
+            <div class="opt-item" title="仅软件 x264 生效；越慢越好">
+              <span class="label">编码速度</span>
               <el-select
-                :model-value="videoAudioBitrate"
+                :model-value="encodePreset"
                 size="small"
-                class="w-md"
-                @change="(v: string) => emit('videoAudioBitrateChange', v)"
+                class="w-2xl"
+                @change="(v: EncodePreset) => emit('encodePresetChange', v)"
               >
                 <el-option
-                  v-for="br in AUDIO_BITRATE_OPTIONS"
-                  :key="br"
-                  :label="br"
-                  :value="br"
+                  v-for="opt in ENCODE_PRESET_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
+
+            <div class="opt-item" :title="CONCURRENCY_HINT">
+              <span class="label">并发数</span>
+              <el-select
+                :model-value="concurrency"
+                size="small"
+                class="w-xs"
+                @change="(v: number) => emit('concurrencyChange', v)"
+              >
+                <el-option
+                  v-for="n in CONCURRENCY_OPTIONS"
+                  :key="n"
+                  :label="String(n)"
+                  :value="n"
+                />
+              </el-select>
+            </div>
+          </div>
+
+          <div class="opt-row">
+            <div class="opt-item" title="90° 竖→横；180° 上下颠倒">
+              <span class="label">旋转</span>
+              <el-select
+                :model-value="rotate90"
+                size="small"
+                class="w-5xl"
+                @change="(v: Rotate90) => emit('rotate90Change', v)"
+              >
+                <el-option
+                  v-for="opt in ROTATE90_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
                 />
               </el-select>
             </div>
@@ -363,93 +437,8 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
               </el-select>
             </div>
 
-            <div class="opt-item">
-              <span class="label">编码速度</span>
-              <el-select
-                :model-value="encodePreset"
-                size="small"
-                class="w-2xl"
-                @change="(v: EncodePreset) => emit('encodePresetChange', v)"
-              >
-                <el-option
-                  v-for="opt in ENCODE_PRESET_OPTIONS"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
-              </el-select>
-              <span class="hint-inline">仅软件 x264 生效；越慢越好</span>
-            </div>
-          </template>
+            <div class="opt-divider" aria-hidden="true" />
 
-          <div class="opt-item">
-            <span class="label">并发数</span>
-            <el-select
-              :model-value="concurrency"
-              size="small"
-              class="w-xs"
-              @change="(v: number) => emit('concurrencyChange', v)"
-            >
-              <el-option
-                v-for="n in CONCURRENCY_OPTIONS"
-                :key="n"
-                :label="String(n)"
-                :value="n"
-              />
-            </el-select>
-            <span v-if="!isAudioMode" class="hint-inline" :title="CONCURRENCY_HINT">
-              {{ CONCURRENCY_HINT }}
-            </span>
-          </div>
-
-          <div class="opt-item">
-            <span class="label">裁剪</span>
-            <span class="hint-inline">开始(秒)</span>
-            <el-input-number
-              :model-value="trimStart"
-              :min="0"
-              :max="86400"
-              :step="1"
-              :precision="1"
-              size="small"
-              controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
-            />
-            <span class="hint-inline">结束(秒)</span>
-            <el-input-number
-              :model-value="trimEnd"
-              :min="0"
-              :max="86400"
-              :step="1"
-              :precision="1"
-              size="small"
-              controls-position="right"
-              class="w-lg"
-              @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
-            />
-            <span class="hint-inline">0 = 不裁剪 / 到结尾</span>
-          </div>
-
-          <div v-if="!isAudioMode" class="opt-item">
-            <span class="label">旋转</span>
-            <el-select
-              :model-value="rotate90"
-              size="small"
-              class="w-5xl"
-              @change="(v: Rotate90) => emit('rotate90Change', v)"
-            >
-              <el-option
-                v-for="opt in ROTATE90_OPTIONS"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </el-select>
-            <span class="hint-inline">90° 竖→横；180° 上下颠倒</span>
-          </div>
-
-          <template v-if="!isAudioMode">
             <div class="opt-item">
               <span class="label">目标体积</span>
               <el-input-number
@@ -466,19 +455,19 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
               <span class="hint-inline">MB，0=不限制</span>
             </div>
 
-            <div v-if="targetSizeMb > 0" class="opt-item">
+            <div v-if="targetSizeMb > 0" class="opt-item" title="仅软件 x264/VP9；硬件自动单遍">
               <span class="label">两遍编码</span>
               <el-switch
                 :model-value="twoPass"
                 size="small"
                 @change="(v: string | number | boolean) => emit('twoPassChange', Boolean(v))"
               />
-              <span class="hint-inline" title="仅软件 x264/VP9；硬件自动单遍">
-                更准更慢；仅软件 x264/VP9
-              </span>
+              <span class="hint-inline">更准更慢</span>
             </div>
 
             <template v-if="isCustom">
+              <div class="opt-divider" aria-hidden="true" />
+
               <div class="opt-item">
                 <span class="label">CRF</span>
                 <el-input-number v-model="custom.crf" :max="51" :min="0" :step="1" size="small" />
@@ -506,8 +495,66 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
                 </el-select>
               </div>
             </template>
-          </template>
-        </div>
+          </div>
+
+          <div class="opt-row">
+            <div class="opt-item" title="去掉音轨">
+              <span class="label">静音</span>
+              <el-switch
+                :model-value="muteAudio"
+                size="small"
+                @change="(v: string | number | boolean) => emit('muteAudioChange', Boolean(v))"
+              />
+            </div>
+
+            <div v-if="!muteAudio" class="opt-item">
+              <span class="label">音轨码率</span>
+              <el-select
+                :model-value="videoAudioBitrate"
+                size="small"
+                class="w-md"
+                @change="(v: string) => emit('videoAudioBitrateChange', v)"
+              >
+                <el-option
+                  v-for="br in AUDIO_BITRATE_OPTIONS"
+                  :key="br"
+                  :label="br"
+                  :value="br"
+                />
+              </el-select>
+            </div>
+
+            <div class="opt-divider" aria-hidden="true" />
+
+            <div class="opt-item" title="0 = 不裁剪 / 到结尾">
+              <span class="label">裁剪</span>
+              <span class="hint-inline">开始(秒)</span>
+              <el-input-number
+                :model-value="trimStart"
+                :min="0"
+                :max="86400"
+                :step="1"
+                :precision="1"
+                size="small"
+                controls-position="right"
+                class="w-lg"
+                @change="(v: number | undefined) => emit('trimStartChange', typeof v === 'number' ? v : 0)"
+              />
+              <span class="hint-inline">结束(秒)</span>
+              <el-input-number
+                :model-value="trimEnd"
+                :min="0"
+                :max="86400"
+                :step="1"
+                :precision="1"
+                size="small"
+                controls-position="right"
+                class="w-lg"
+                @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
+              />
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -557,10 +604,6 @@ function nameSelectValue(nameTemplate: string, isCustom: boolean): string {
   margin-top: 10px;
   padding-top: 10px;
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, var(--panel-border) 80%, transparent);
-}
-
-.opt-row-wrap {
-  flex-wrap: wrap;
 }
 
 .opt-divider {

@@ -9,21 +9,66 @@
 
 - Windows 代码签名、macOS 公证完整链路（配置与证书就绪后启用）
 
-## [1.0.1] - 2026-08-12
+## [1.0.0]
+
+**轻影**（qingying）首发：本地视频压缩与音频抽取桌面应用（Electron + Vue 3 + TypeScript + Element Plus）。
 
 ### 新增
 
-- **设置抽屉**：主题 / 并发 / 通知 / 任务持久化 / ffmpeg 路径 / 数据管理 / 关于
-- 支持自定义数据目录（重启生效）与 ffmpeg bin 覆盖
-- **无边框自定义标题栏**：拖动、最小化 / 最大化 / 关闭；快捷键与设置入口上移
-- **关闭行为**：询问 / 最小化到托盘 / 直接退出；支持「下次不再询问」；设置「通用」可改
-- **系统托盘**：悬停显示版本；菜单含打开主窗口 / 检查更新 / 打开设置 / 退出
-- FFmpeg 就绪状态展示在标题栏（悬停显示路径或错误）
+#### 核心能力
+
+- 内置 `ffmpeg-static` / `ffprobe-static`，无需系统安装 FFmpeg
+- 多文件添加：按钮选择 + 拖拽（真实本地路径）；**文件夹递归**（深度 8 / 最多 500）
+- **任务模式**：视频压缩 / 仅抽取音频（m4a / mp3 / opus + 码率）
+- 压缩预设：高清存档 / 标准压缩 / 微信社交 / 自定义
+- 多格式输出：mp4 / mkv / mov（H.264 + AAC）、webm（VP9 + Opus）
+- 并行编码：并发 1–4；单任务 / 全部取消
+- 体积对比：原始 / 输出 / 节省比例与汇总
+- 实时进度：百分比、时间、速度、**ETA**
+- **时间段裁剪**（开始/结束秒，压缩与抽音频均支持）
+- **目标体积（MB）**：码率估算约达目标；可选 **真·两遍编码**（libx264 / VP9；硬件自动单遍 ABR）
 - **画面旋转**：高级选项支持顺时针 / 逆时针 90°（竖→横）与 180°
 - **静音**：高级选项可去掉音轨（`-an`）
 - **兼容档**：H.264 可选 Main@L4 / High + yuv420p（利于旧设备/微信）；WebM 不适用
 - **视频音轨码率**：压缩时可选手动码率（默认仍 128k）
 - **帧率 / 编码速度**：可选 24/30/60 fps；x264 preset 快速 / 均衡 / 高质量
+
+#### 硬件加速
+
+- 自动 / 软件 x264 / NVIDIA NVENC / Intel QSV / AMD AMF / **Apple VideoToolbox**
+- 列表探测 + **lavfi 短片试编**验证
+- 硬件编码失败自动回退软件 x264，并提示
+- auto 在 macOS（darwin）优先 VideoToolbox
+
+#### 体验与界面
+
+- **暗色模式**：浅色 / 深色 / 跟随系统
+- **无边框自定义标题栏**：拖动、最小化 / 最大化 / 关闭
+- **设置抽屉**：主题 / 并发 / 通知 / 任务持久化 / ffmpeg 路径 / 数据管理 / 关于
+- 支持自定义数据目录（重启生效）与 ffmpeg bin 覆盖
+- **关闭行为**：询问 / 最小化到托盘 / 直接退出；支持「下次不再询问」
+- **系统托盘**：悬停显示版本；菜单含打开主窗口 / 检查更新 / 打开设置 / 退出
+- FFmpeg 就绪状态展示在标题栏（悬停显示路径或错误）
+- **全局快捷键**与帮助对话框（`F1` / 工具栏 `?`）
+- 输出命名模板：预设 + 自定义（`{name}` `{preset}` `{date}` `{time}`）
+- 输出位置：固定目录 / 源文件同目录 / 按日期子目录
+- 设置持久化（输出目录、预设、编码器、并发、命名、目标体积、两遍、主题、任务模式、通知等）
+- **任务列表持久化**（重启恢复；运行中回落待处理；源文件缺失标失败；已完成最多 100 条）
+- **任务详情**：路径、参数摘要、完整 ffmpeg 命令行、错误全文
+- 队列完成后系统通知；打开文件 / 在文件夹中显示
+- 应用到待处理；错误信息中文产品化映射
+- 抽音频前无音轨预检
+- 品牌图标（窗口 / 安装包 / favicon）
+
+#### 工程与分发
+
+- 产品名 **轻影**，包名 / 安装包 `qingying`，`appId` 为 `com.moonstack.qingying`
+- 仓库：`moon-stack-OAo/qingying`
+- 架构：main / preload / renderer；`shared` 类型与 FFmpeg 纯逻辑
+- UI：composables + 组件拆分
+- vitest 单元测试；CI：`typecheck` + `test` + `build`
+- 自动更新：`electron-updater` + GitHub Releases
+- Windows / macOS 打包配置（electron-builder）；发版说明见 `docs/RELEASE.md`
 
 ### 优化
 
@@ -40,54 +85,6 @@
 ### 依赖
 
 - 添加 `@resvg/resvg-js`、`to-ico` 开发依赖（图标构建）
-
-## [1.0.0] - 2026-08-10
-
-本地视频压缩桌面应用完整 1.0 能力整合版（Electron + Vue 3 + TypeScript + Element Plus）。
-
-### 新增
-
-#### 核心能力
-
-- 内置 `ffmpeg-static` / `ffprobe-static`，无需系统安装 FFmpeg
-- 多文件添加：按钮选择 + 拖拽（真实本地路径）；**文件夹递归**（深度 8 / 最多 500）
-- **任务模式**：视频压缩 / 仅抽取音频（m4a / mp3 / opus + 码率）
-- 压缩预设：高清存档 / 标准压缩 / 微信社交 / 自定义
-- 多格式输出：mp4 / mkv / mov（H.264 + AAC）、webm（VP9 + Opus）
-- 并行编码：并发 1–4；单任务 / 全部取消
-- 体积对比：原始 / 输出 / 节省比例与汇总
-- 实时进度：百分比、时间、速度、**ETA**
-- **时间段裁剪**（开始/结束秒，压缩与抽音频均支持）
-- **目标体积（MB）**：码率估算约达目标；可选 **真·两遍编码**（libx264 / VP9；硬件自动单遍 ABR）
-
-#### 硬件加速
-
-- 自动 / 软件 x264 / NVIDIA NVENC / Intel QSV / AMD AMF / **Apple VideoToolbox**
-- 列表探测 + **lavfi 短片试编**验证
-- 硬件编码失败自动回退软件 x264，并提示
-- auto 在 macOS（darwin）优先 VideoToolbox
-
-#### 体验与界面
-
-- **暗色模式**：浅色 / 深色 / 跟随系统
-- **全局快捷键**与帮助对话框（`F1` / 工具栏 `?`）
-- 输出命名模板：预设 + 自定义（`{name}` `{preset}` `{date}` `{time}`）
-- 输出位置：固定目录 / 源文件同目录 / 按日期子目录
-- 设置持久化（输出目录、预设、编码器、并发、命名、目标体积、两遍、主题、任务模式、通知等）
-- **任务列表持久化**（重启恢复；运行中回落待处理；源文件缺失标失败；已完成最多 100 条）
-- **任务详情**：路径、参数摘要、完整 ffmpeg 命令行、错误全文
-- 队列完成后系统通知；打开文件 / 在文件夹中显示
-- 应用到待处理；错误信息中文产品化映射
-- 抽音频前无音轨预检
-- 品牌图标（窗口 / 安装包 / favicon）
-
-#### 工程与分发
-
-- 架构：main / preload / renderer；`shared` 类型与 FFmpeg 纯逻辑
-- UI：composables + 组件拆分
-- vitest 单元测试；CI：`typecheck` + `test` + `build`
-- 自动更新：`electron-updater` + GitHub Releases
-- Windows / macOS 打包配置（electron-builder）；发版说明见 `docs/RELEASE.md`
 
 ### 说明
 
@@ -108,8 +105,6 @@
 | `Ctrl/Cmd + D`                                | 切换浅色 / 深色 |
 | `F1` 或 `Ctrl + /`                             | 快捷键帮助     |
 
-[Unreleased]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/moon-stack-OAo/qingying/compare/v1.0.0...HEAD
 
-[1.0.1]: https://github.com/moon-stack-OAo/ffmpeg_tool/compare/v1.0.0...v1.0.1
-
-[1.0.0]: https://github.com/moon-stack-OAo/ffmpeg_tool/releases/tag/v1.0.0
+[1.0.0]: https://github.com/moon-stack-OAo/qingying/releases/tag/v1.0.0

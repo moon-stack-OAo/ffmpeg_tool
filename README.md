@@ -1,8 +1,8 @@
-# FFmpeg 视频压缩工具
+# 轻影
 
-**版本：1.0.0**
+**版本：1.0.0** · 本地视频压缩与音频抽取
 
-基于 **Electron + Vue 3 + TypeScript + Element Plus** 的本地视频压缩桌面应用。  
+基于 **Electron + Vue 3 + TypeScript + Element Plus** 的桌面应用。  
 通过内置 `ffmpeg-static` / `ffprobe-static` 调用 FFmpeg，无需系统预先安装 FFmpeg。
 
 ## 功能
@@ -53,7 +53,7 @@
 ## 安装依赖
 
 ```bash
-cd D:\Moon\tools\ffmpeg_tool
+cd qingying
 npm install
 ```
 
@@ -102,7 +102,7 @@ npm run dist:mac
 ## 目录结构
 
 ```
-ffmpeg_tool/
+qingying/
 ├── .github/workflows/  # CI / Release
 ├── docs/               # 发版等文档
 ├── electron/
@@ -162,7 +162,7 @@ git push origin v1.0.0
 
 ### 更新源
 
-当前仓库：`moon-stack-OAo/ffmpeg_tool`（与 `package.json` / `electron-builder.yml` 一致）。
+当前仓库：`moon-stack-OAo/qingying`（与 `package.json` / `electron-builder.yml` 一致）。
 
 ### 行为说明
 

@@ -7,11 +7,13 @@ import {checkFfmpegAvailable, detectHardwareEncoders, setBinaryOverride} from '.
 import {collectVideoFiles} from './mediaScan'
 import {getSettings, loadSettings, resetSettings, saveSettings} from './settings'
 import {clearStoredTasks, loadTasks, saveTasks} from './taskStore'
-import {applyUserDataOverride, setUserDataDir} from './dataDir'
+import {applyAppIdentity, applyUserDataOverride, setUserDataDir} from './dataDir'
+import {APP_ID, PRODUCT_NAME} from '../../shared/brand'
 import {taskQueue} from './taskQueue'
 import {initAutoUpdater, registerUpdaterIpc} from './updater'
 
-// 在读取 userData 之前应用自定义数据目录（须早于 whenReady 中的 loadSettings）
+// 固定 ASCII 应用名后再读 userData，避免落到中文产品名目录
+applyAppIdentity()
 applyUserDataOverride()
 
 function isDev(): boolean {
@@ -122,7 +124,7 @@ function ensureTray(): void {
   if (tray) return
   const image = resolveTrayIcon()
   tray = new Tray(image)
-  tray.setToolTip(`FFmpeg 视频压缩工具 v${app.getVersion()}`)
+  tray.setToolTip(`${PRODUCT_NAME} v${app.getVersion()}`)
   tray.setContextMenu(buildTrayMenu())
   // Windows：左键打开主窗口，右键系统菜单
   tray.on('click', () => showMainWindow())
@@ -162,7 +164,7 @@ function createWindow(): void {
     resizable: false,
     maximizable: true,
     show: false,
-    title: 'FFmpeg 视频压缩工具',
+    title: PRODUCT_NAME,
     frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
@@ -580,7 +582,7 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
-  app.setAppUserModelId('com.ffmpeg.tool')
+  app.setAppUserModelId(APP_ID)
   const settings = loadSettings()
   // 启动即应用用户自定义 ffmpeg bin 目录（无效时回退自动探测）
   setBinaryOverride(settings.ffmpegBinDir)

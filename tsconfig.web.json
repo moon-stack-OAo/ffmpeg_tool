@@ -21,6 +21,7 @@
   "include": [
     "src/**/*",
     "src/**/*.vue",
-    "shared/types.ts"
+    "shared/types.ts",
+    "shared/brand.ts"
   ]
 }

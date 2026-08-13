@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
 import type { AppInfo, CloseAction, FfmpegStatus, ThemeMode } from '@shared/types'
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
 import {
   CLOSE_ACTION_OPTIONS,
   CONCURRENCY_HINT,
@@ -273,6 +274,10 @@ function onPathKeydown(e: KeyboardEvent): void {
 
       <el-tab-pane label="关于" name="about" lazy>
         <div class="setting-pane">
+          <div class="setting-row">
+            <span class="setting-label">应用</span>
+            <span class="setting-value">{{ PRODUCT_NAME }} · {{ PRODUCT_TAGLINE }}</span>
+          </div>
           <div class="setting-row">
             <span class="setting-label">版本</span>
             <span class="setting-value">v{{ appVersion }}</span>

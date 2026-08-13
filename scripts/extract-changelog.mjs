@@ -30,9 +30,9 @@ function extractSection(changelog, version) {
   if (!ver) return null
 
   const lines = changelog.replace(/\r\n/g, '\n').split('\n')
-  // 匹配 ## [1.0.0] 或 ## [1.0.0] - 2026-08-10
+  // 匹配 ## [1.0.0]（版本号后不带日期）
   const headerRe = new RegExp(
-    `^##\\s*\\[${ver.replace(/\./g, '\\.')}\\](?:\\s*-\\s*.*)?\\s*$`
+    `^##\\s*\\[${ver.replace(/\./g, '\\.')}\\]\\s*$`
   )
 
   let start = -1
@@ -63,14 +63,14 @@ function extractSection(changelog, version) {
 
 function buildReleaseBody(version, sectionBody) {
   const ver = normalizeVersion(version)
-  const title = `# FFmpeg 视频压缩工具 v${ver}`
+  const title = `# 轻影 v${ver}`
   if (!sectionBody || !sectionBody.trim()) {
     return [
       title,
       '',
       '> 未在 CHANGELOG.md 中找到该版本小节，请补充后重新发版。',
       '',
-      '详见仓库 [CHANGELOG.md](https://github.com/moon-stack-OAo/ffmpeg_tool/blob/main/CHANGELOG.md)。'
+      '详见仓库 [CHANGELOG.md](https://github.com/moon-stack-OAo/qingying/blob/main/CHANGELOG.md)。'
     ].join('\n')
   }
 
@@ -81,8 +81,8 @@ function buildReleaseBody(version, sectionBody) {
     '',
     '---',
     '',
-    '完整变更记录见 [CHANGELOG.md](https://github.com/moon-stack-OAo/ffmpeg_tool/blob/main/CHANGELOG.md)。',
-    '发版说明见 [docs/RELEASE.md](https://github.com/moon-stack-OAo/ffmpeg_tool/blob/main/docs/RELEASE.md)。'
+    '完整变更记录见 [CHANGELOG.md](https://github.com/moon-stack-OAo/qingying/blob/main/CHANGELOG.md)。',
+    '发版说明见 [docs/RELEASE.md](https://github.com/moon-stack-OAo/qingying/blob/main/docs/RELEASE.md)。'
   ].join('\n')
 }
 

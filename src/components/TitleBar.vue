@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Close, FullScreen, Minus, QuestionFilled, Setting } from '@element-plus/icons-vue'
 import type { FfmpegStatus } from '@shared/types'
+import { PRODUCT_NAME } from '@shared/brand'
 
 const props = defineProps<{
   appVersion: string
@@ -56,10 +57,10 @@ async function close(): Promise<void> {
 
 <template>
   <header class="title-bar" @dblclick="toggleMaximize">
-    <div class="title-bar-left" :title="`FFmpeg 视频压缩工具 v${appVersion}`">
+    <div class="title-bar-left" :title="`${PRODUCT_NAME} v${appVersion}`">
       <img class="title-bar-icon" src="../favicon.png" alt="" draggable="false" />
       <div class="title-bar-text">
-        <span class="title-bar-name">FFmpeg 工具</span>
+        <span class="title-bar-name">{{ PRODUCT_NAME }}</span>
         <span class="title-bar-ver">v{{ appVersion }}</span>
       </div>
       <span

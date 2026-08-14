@@ -769,7 +769,8 @@ export function formatSaveRatio(
 /** Preload 暴露给渲染进程的 API */
 export interface ElectronAPI {
   selectFiles: () => Promise<AddFilesResult>
-  selectDirectory: () => Promise<SelectDirResult>
+  /** defaultPath：打开对话框时的初始目录（如当前输出目录） */
+  selectDirectory: (defaultPath?: string) => Promise<SelectDirResult>
   /** 选择水印图片（单选 png/jpg/webp/bmp） */
   selectImage: () => Promise<{ path: string | null }>
   getFfmpegStatus: () => Promise<FfmpegStatus>

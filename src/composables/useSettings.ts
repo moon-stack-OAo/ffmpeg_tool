@@ -665,7 +665,7 @@ export function useSettings(options: UseSettingsOptions = {}) {
   }
 
   async function onSelectOutput(): Promise<void> {
-    const res = await window.electronAPI.selectDirectory()
+    const res = await window.electronAPI.selectDirectory(outputDir.value || undefined)
     if (res.path) {
       outputDir.value = res.path
       persist({ outputDir: res.path })

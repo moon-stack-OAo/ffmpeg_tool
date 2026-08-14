@@ -297,7 +297,7 @@ function onCloseCancel(): void {
 
 /** 浏览并设置自定义 ffmpeg bin 目录 */
 async function onBrowseFfmpegDir(): Promise<void> {
-  const res = await window.electronAPI.selectDirectory()
+  const res = await window.electronAPI.selectDirectory(ffmpegBinDir.value || undefined)
   if (!res.path) return
   const r = await onSetFfmpegBinDir(res.path)
   if (r.ok) {
@@ -320,7 +320,7 @@ async function onClearFfmpegBinDir(): Promise<void> {
 }
 
 async function onBrowseMagickPath(): Promise<void> {
-  const res = await window.electronAPI.selectDirectory()
+  const res = await window.electronAPI.selectDirectory(imagemagickPath.value || undefined)
   if (!res.path) return
   const r = await onSetMagickPath(res.path)
   if (r.ok) {
@@ -404,7 +404,9 @@ async function onOpenAppData(): Promise<void> {
 
 /** 修改用户数据目录（需重启生效） */
 async function onChangeDataDir(): Promise<void> {
-  const res = await window.electronAPI.selectDirectory()
+  const res = await window.electronAPI.selectDirectory(
+    appInfo.value?.userDataPath || undefined
+  )
   if (!res.path) return
   try {
     const r = await window.electronAPI.setDataDir(res.path)

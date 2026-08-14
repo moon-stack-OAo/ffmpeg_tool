@@ -214,7 +214,8 @@ installDropCapture()
 
 const api: ElectronAPI = {
   selectFiles: () => ipcRenderer.invoke(IpcChannels.SELECT_FILES),
-  selectDirectory: () => ipcRenderer.invoke(IpcChannels.SELECT_DIR),
+  selectDirectory: (defaultPath?: string) =>
+    ipcRenderer.invoke(IpcChannels.SELECT_DIR, defaultPath),
   selectImage: () => ipcRenderer.invoke(IpcChannels.SELECT_IMAGE),
   getFfmpegStatus: () => ipcRenderer.invoke(IpcChannels.GET_FFMPEG_STATUS),
   detectEncoders: () => ipcRenderer.invoke(IpcChannels.DETECT_ENCODERS),

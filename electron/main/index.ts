@@ -1,6 +1,6 @@
 import {app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray} from 'electron'
-import {basename, extname, join} from 'path'
-import {existsSync} from 'fs'
+import {basename, dirname, extname, join} from 'path'
+import {existsSync, statSync} from 'fs'
 import type {
   AppSettings,
   CloseAction,
@@ -319,12 +319,36 @@ function registerIpc(): void {
     return { files }
   })
 
-  ipcMain.handle(IpcChannels.SELECT_DIR, async () => {
+  ipcMain.handle(IpcChannels.SELECT_DIR, async (_e, defaultPath?: string) => {
     if (!mainWindow) return { path: null }
 
+    const start = typeof defaultPath === 'string' ? defaultPath.trim() : ''
+    let defaultDir: string | undefined
+    if (start) {
+      try {
+        if (existsSync(start)) {
+          defaultDir = statSync(start).isDirectory() ? start : dirname(start)
+        } else {
+          // 目录尚不存在时，尽量落到已存在的父路径
+          let cur = start
+          while (cur && cur !== dirname(cur)) {
+            const parent = dirname(cur)
+            if (existsSync(parent)) {
+              defaultDir = parent
+              break
+            }
+            cur = parent
+          }
+        }
+      } catch {
+        defaultDir = undefined
+      }
+    }
+
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择输出目录',
-      properties: ['openDirectory', 'createDirectory']
+      title: '选择目录',
+      properties: ['openDirectory', 'createDirectory'],
+      ...(defaultDir ? { defaultPath: defaultDir } : {})
     })
 
     if (result.canceled || !result.filePaths.length) {

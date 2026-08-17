@@ -90,10 +90,13 @@ describe('isHardwareEncoderFailure', () => {
   it('硬件编码器失败（即使文案不含关键字）', () => {
     expect(isHardwareEncoderFailure('exit code 1', 'h264_nvenc')).toBe(true)
     expect(isHardwareEncoderFailure('exit code 1', 'h264_videotoolbox')).toBe(true)
+    expect(isHardwareEncoderFailure('exit code 1', 'hevc_nvenc')).toBe(true)
+    expect(isHardwareEncoderFailure('exit code 1', 'h264_mf')).toBe(true)
   })
 
   it('软件编码不算硬件失败', () => {
     expect(isHardwareEncoderFailure('some error', 'libx264')).toBe(false)
+    expect(isHardwareEncoderFailure('some error', 'libx265')).toBe(false)
     expect(isHardwareEncoderFailure('some error', 'libvpx-vp9')).toBe(false)
   })
 })

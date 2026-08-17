@@ -5,6 +5,8 @@ import {
   type CompressTask,
   type FfmpegStatus,
   formatSaveRatio,
+  IMAGE_EXTENSIONS,
+  type TaskMode,
   VIDEO_EXTENSIONS
 } from '@shared/types'
 
@@ -15,6 +17,23 @@ export interface UseTasksDeps {
   concurrency: Ref<number>
   /** 是否持久化任务列表，默认 true */
   persistTasks?: Ref<boolean>
+  /** 当前任务模式（用于扩展名过滤） */
+  taskMode?: Ref<TaskMode>
+}
+
+function getExt(fileName: string): string {
+  const lower = fileName.toLowerCase()
+  const idx = lower.lastIndexOf('.')
+  if (idx < 0) return ''
+  return lower.slice(idx)
+}
+
+function isImageMode(mode?: TaskMode | null): boolean {
+  return mode === 'image' || mode === 'image-crop' || mode === 'image-stitch'
+}
+
+function needsFfmpeg(mode?: TaskMode | null): boolean {
+  return !isImageMode(mode)
 }
 
 /** 压缩任务列表与启停控制 */
@@ -58,11 +77,18 @@ export function useTasks(deps: UseTasksDeps) {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
   }
 
-  function isVideoExt(fileName: string): boolean {
-    const lower = fileName.toLowerCase()
-    const idx = lower.lastIndexOf('.')
-    if (idx < 0) return false
-    const ext = lower.slice(idx)
+  function currentMode(): TaskMode {
+    return deps.taskMode?.value || deps.buildOptions().mode || 'compress'
+  }
+
+  /** 按当前模式判断是否允许该扩展名 */
+  function isAllowedMedia(fileName: string, mode?: TaskMode): boolean {
+    const ext = getExt(fileName)
+    if (!ext) return false
+    const m = mode || currentMode()
+    if (isImageMode(m)) {
+      return (IMAGE_EXTENSIONS as string[]).includes(ext)
+    }
     return (VIDEO_EXTENSIONS as string[]).includes(ext)
   }
 
@@ -94,20 +120,58 @@ export function useTasks(deps: UseTasksDeps) {
     ElMessage.success(`已将当前选项应用到 ${targets.length} 个任务`)
   }
 
+  function invalidMediaMessage(mode: TaskMode): string {
+    if (isImageMode(mode)) return '未添加有效图片文件'
+    return '未添加有效视频文件'
+  }
+
   function addFiles(files: Array<{ path: string; name: string }>): void {
+    const mode = currentMode()
+    const valid = files.filter((f) => {
+      if (!f.path) return false
+      return isAllowedMedia(f.name || f.path, mode)
+    })
+    const invalidCount = files.length - valid.length
+
+    // 拼接模式：一次多选 → 一个任务
+    if (
+      (mode === 'image-stitch' || mode === 'video-concat') &&
+      valid.length > 0
+    ) {
+      const paths = valid.map((f) => f.path)
+      const taskOptions = deps.buildOptions()
+      const n = paths.length
+      const fileName =
+        mode === 'image-stitch' ? `拼接 ${n} 张` : `拼接 ${n} 段`
+      const task: CompressTask = {
+        id: genId(),
+        inputPath: paths[0],
+        inputPaths: paths,
+        fileName,
+        outputPath: '',
+        status: 'pending',
+        progress: 0,
+        options: taskOptions
+      }
+      tasks.value.push(task)
+      lastDropOkAt.value = Date.now()
+      ElMessage.success(
+        mode === 'image-stitch'
+          ? `已添加拼接任务（${n} 张图片）`
+          : `已添加拼接任务（${n} 段视频）`
+      )
+      if (invalidCount > 0) {
+        ElMessage.warning(`已忽略 ${invalidCount} 个不支持的文件`)
+      }
+      return
+    }
+
     const existing = new Set(tasks.value.map((t) => t.inputPath))
     let added = 0
     let skippedDup = 0
-    let skippedInvalid = 0
-    for (const f of files) {
-      if (!f.path) {
-        skippedInvalid += 1
-        continue
-      }
-      if (!isVideoExt(f.name || f.path)) {
-        skippedInvalid += 1
-        continue
-      }
+    let skippedInvalid = invalidCount
+
+    for (const f of valid) {
       if (existing.has(f.path)) {
         skippedDup += 1
         continue
@@ -126,13 +190,14 @@ export function useTasks(deps: UseTasksDeps) {
       existing.add(f.path)
       added += 1
     }
+
     if (added > 0) {
       lastDropOkAt.value = Date.now()
       ElMessage.success(`已添加 ${added} 个文件`)
     } else if (skippedDup > 0 && skippedInvalid === 0) {
       ElMessage.info('文件已在列表中')
     } else if (skippedInvalid > 0 && added === 0) {
-      ElMessage.warning('未添加有效视频文件')
+      ElMessage.warning(invalidMediaMessage(mode))
     }
   }
 
@@ -151,15 +216,56 @@ export function useTasks(deps: UseTasksDeps) {
     return true
   }
 
+  function resolveInputPaths(task: CompressTask): string[] {
+    const multi = (task.inputPaths || [])
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter(Boolean)
+    if (multi.length > 0) return multi
+    const single =
+      typeof task.inputPath === 'string' ? task.inputPath.trim() : ''
+    return single ? [single] : []
+  }
+
+  function validateTaskForStart(task: CompressTask, mode: TaskMode): string | null {
+    if (mode === 'image-stitch' || mode === 'video-concat') {
+      const paths = resolveInputPaths(task)
+      if (paths.length < 2) {
+        return mode === 'image-stitch'
+          ? '图片拼接至少需要 2 张图片'
+          : '视频拼接至少需要 2 段视频'
+      }
+    }
+    if (mode === 'image-crop') {
+      const crop = task.options?.crop || task.options?.image?.crop
+      if (!crop || !(crop.w > 0 && crop.h > 0)) {
+        return '请设置有效的裁切区域（宽高须大于 0）'
+      }
+    }
+    if (mode === 'media-compose') {
+      const c = task.options?.compose
+      const hasIntro =
+        typeof c?.intro?.imagePath === 'string' && c.intro.imagePath.trim()
+      const hasOutro =
+        typeof c?.outro?.imagePath === 'string' && c.outro.imagePath.trim()
+      const hasOverlay =
+        typeof c?.overlay?.imagePath === 'string' && c.overlay.imagePath.trim()
+      if (!hasIntro && !hasOutro && !hasOverlay) {
+        return '请设置片头、片尾或叠加图'
+      }
+    }
+    return null
+  }
+
   async function startOne(task: CompressTask): Promise<void> {
     const draftOpts = deps.buildOptions()
     if (!requireOutputDir(draftOpts)) return
-    if (!deps.ffmpegStatus.value.ready) {
+
+    const mode = draftOpts.mode || task.options?.mode || 'compress'
+    if (needsFfmpeg(mode) && !deps.ffmpegStatus.value.ready) {
       ElMessage.error(deps.ffmpegStatus.value.error || 'ffmpeg 未就绪')
       return
     }
 
-    // 强制用最新 options，清空 outputPath 由主进程重建
     const options = { ...draftOpts, outputDir: deps.outputDir.value }
     const payload: CompressTask = {
       ...task,
@@ -169,6 +275,12 @@ export function useTasks(deps: UseTasksDeps) {
       progress: 0,
       error: undefined,
       outputSize: undefined
+    }
+
+    const err = validateTaskForStart(payload, mode)
+    if (err) {
+      ElMessage.warning(err)
+      return
     }
 
     updateTask(task.id, {
@@ -190,7 +302,9 @@ export function useTasks(deps: UseTasksDeps) {
   async function startAll(): Promise<void> {
     const draftOpts = deps.buildOptions()
     if (!requireOutputDir(draftOpts)) return
-    if (!deps.ffmpegStatus.value.ready) {
+
+    const mode = draftOpts.mode || 'compress'
+    if (needsFfmpeg(mode) && !deps.ffmpegStatus.value.ready) {
       ElMessage.error(deps.ffmpegStatus.value.error || 'ffmpeg 未就绪')
       return
     }
@@ -204,15 +318,36 @@ export function useTasks(deps: UseTasksDeps) {
     }
 
     const options = { ...draftOpts, outputDir: deps.outputDir.value }
-    const payload = candidates.map((t) => ({
-      ...t,
-      options,
-      outputPath: '',
-      status: 'queued' as const,
-      progress: 0,
-      error: undefined,
-      outputSize: undefined
-    }))
+    const payload: CompressTask[] = []
+    let skipped = 0
+
+    for (const t of candidates) {
+      const item: CompressTask = {
+        ...t,
+        options,
+        outputPath: '',
+        status: 'queued',
+        progress: 0,
+        error: undefined,
+        outputSize: undefined
+      }
+      const err = validateTaskForStart(item, mode)
+      if (err) {
+        skipped += 1
+        updateTask(t.id, { error: err })
+        continue
+      }
+      payload.push(item)
+    }
+
+    if (!payload.length) {
+      ElMessage.warning(
+        skipped > 0
+          ? `没有可开始的任务（${skipped} 个未通过校验）`
+          : '没有可开始的任务'
+      )
+      return
+    }
 
     for (const t of payload) {
       updateTask(t.id, {
@@ -229,7 +364,11 @@ export function useTasks(deps: UseTasksDeps) {
     if (!res.ok) {
       ElMessage.error(res.error || '批量启动失败')
     } else {
-      ElMessage.success(`已提交 ${payload.length} 个任务（并发 ${deps.concurrency.value}）`)
+      const extra =
+        skipped > 0 ? `，跳过 ${skipped} 个未通过校验` : ''
+      ElMessage.success(
+        `已提交 ${payload.length} 个任务（并发 ${deps.concurrency.value}）${extra}`
+      )
     }
   }
 
@@ -380,11 +519,25 @@ export function useTasks(deps: UseTasksDeps) {
       updateTask(taskId, { status: 'queued' })
     })
 
+    // 局域网上传等外部入队：补全任务到列表
+    const offAdded = window.electronAPI.onTaskAdded((task) => {
+      const exists = tasks.value.some((t) => t.id === task.id)
+      if (exists) {
+        updateTask(task.id, {
+          ...task,
+          status: task.status || 'queued'
+        })
+      } else {
+        tasks.value = [...tasks.value, { ...task, status: task.status || 'queued' }]
+      }
+    })
+
     return () => {
       stopWatch()
       offProgress()
       offEnd()
       offQueued()
+      offAdded()
       flushSaveTasks()
     }
   }

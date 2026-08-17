@@ -4,8 +4,12 @@ import {
   CONCURRENCY_HINT,
   DEFAULT_AUDIO_BITRATE,
   DEFAULT_AUDIO_NAME_TEMPLATE,
+  DEFAULT_COMPOSE_NAME_TEMPLATE,
+  DEFAULT_CONCAT_NAME_TEMPLATE,
+  DEFAULT_IMAGE_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
   type AppSettings,
+  type AspectRatioId,
   type AudioFormat,
   type CloseAction,
   type CompatProfile,
@@ -20,11 +24,27 @@ import {
   type OutputFormat,
   type PresetId,
   type Rotate90,
+  type ScaleMode,
+  type ScalePadMode,
   type TaskMode,
   type ThemeMode,
   type WatermarkMode,
   type WatermarkPosition
 } from '@shared/types'
+
+const BUILTIN_NAME_TEMPLATES = new Set([
+  DEFAULT_NAME_TEMPLATE,
+  DEFAULT_AUDIO_NAME_TEMPLATE,
+  DEFAULT_IMAGE_NAME_TEMPLATE,
+  DEFAULT_CONCAT_NAME_TEMPLATE,
+  DEFAULT_COMPOSE_NAME_TEMPLATE,
+  '{name}_{preset}',
+  '{name}_{date}'
+])
+
+function isImageTaskMode(mode: TaskMode): boolean {
+  return mode === 'image' || mode === 'image-crop' || mode === 'image-stitch'
+}
 
 export interface UseSettingsOptions {
   /** 压缩参数变更时回调（用于同步待处理任务 options） */
@@ -58,6 +78,42 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const imageEngine = ref<ImageEngineId>('sharp')
   /** ImageMagick 路径（全路径或目录），空串=自动探测 */
   const imagemagickPath = ref('')
+  /** 图片输出格式（可持久化） */
+  const imageFormat = ref<'jpeg' | 'png' | 'webp' | 'keep'>('jpeg')
+  /** 图片质量 1–100 */
+  const imageQuality = ref(80)
+  /** 图片最长边，0=不限制 */
+  const imageMaxEdge = ref(1920)
+  /** 去掉图片元数据 */
+  const imageStrip = ref(true)
+  /** 拼接布局 */
+  const imageLayout = ref<'horizontal' | 'vertical' | 'grid'>('horizontal')
+  /** 网格列数 */
+  const imageGridCols = ref(2)
+  /** 拼接间距 */
+  const imageGap = ref(0)
+  /** 拼接背景色 */
+  const imageBackground = ref('#000000')
+  /** 画面裁切（任务级，不持久化） */
+  const cropX = ref(0)
+  const cropY = ref(0)
+  const cropW = ref(0)
+  const cropH = ref(0)
+  /** 视频拼接优先流复制 */
+  const concatPreferCopy = ref(true)
+  /** 图+视频混剪（任务级，不持久化） */
+  const composeIntroPath = ref('')
+  const composeIntroDuration = ref(3)
+  const composeOutroPath = ref('')
+  const composeOutroDuration = ref(3)
+  const composeOverlayPath = ref('')
+  const composeOverlayPosition = ref<WatermarkPosition>('br')
+  const composeOverlayOpacity = ref(0.8)
+  const composeOverlayScalePercent = ref(15)
+  const composeOverlayMargin = ref(16)
+  const composeOverlayStartSec = ref(0)
+  const composeOverlayEndSec = ref(0)
+  const composeFitIntroOutro = ref(true)
   /** 关闭按钮行为：ask | tray | quit */
   const closeAction = ref<CloseAction>('ask')
   /** 裁剪开始秒，0 表示不裁剪（任务级，不持久化到 settings） */
@@ -90,6 +146,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
     maxEdge: 0,
     format: 'mp4' as OutputFormat
   })
+  /** 分辨率缩放模式（custom 区；预设仅 maxEdge 兼容） */
+  const scaleMode = ref<ScaleMode>('maxEdge')
+  const outWidth = ref(1920)
+  const outHeight = ref(1080)
+  const aspectRatio = ref<AspectRatioId>('16:9')
+  const scalePad = ref<ScalePadMode>('black')
 
   let persistTimer: ReturnType<typeof setTimeout> | null = null
   let stopCustomWatch: WatchStopHandle | undefined
@@ -110,6 +172,49 @@ export function useSettings(options: UseSettingsOptions = {}) {
 
   /** 是否为仅抽音频模式 */
   const isAudioMode = computed(() => taskMode.value === 'audio')
+
+  /** 是否为图片相关模式 */
+  const isImageMode = computed(
+    () =>
+      taskMode.value === 'image' ||
+      taskMode.value === 'image-crop' ||
+      taskMode.value === 'image-stitch'
+  )
+
+  /** 是否为视频拼接模式 */
+  const isVideoConcatMode = computed(() => taskMode.value === 'video-concat')
+
+  /** 是否为图+视频混剪模式 */
+  const isMediaComposeMode = computed(() => taskMode.value === 'media-compose')
+
+  /** 是否显示视频压缩高级选项（CRF/编码器等） */
+  const isVideoCompressMode = computed(() => taskMode.value === 'compress')
+
+  function buildCropRect():
+    | { x: number; y: number; w: number; h: number }
+    | undefined {
+    const w = cropW.value
+    const h = cropH.value
+    if (
+      typeof w !== 'number' ||
+      typeof h !== 'number' ||
+      !Number.isFinite(w) ||
+      !Number.isFinite(h) ||
+      w <= 0 ||
+      h <= 0
+    ) {
+      return undefined
+    }
+    const x =
+      typeof cropX.value === 'number' && Number.isFinite(cropX.value)
+        ? Math.max(0, Math.round(cropX.value))
+        : 0
+    const y =
+      typeof cropY.value === 'number' && Number.isFinite(cropY.value)
+        ? Math.max(0, Math.round(cropY.value))
+        : 0
+    return { x, y, w: Math.round(w), h: Math.round(h) }
+  }
 
   function buildOptions(): CompressOptions {
     const p = currentPreset.value
@@ -152,7 +257,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
         ? targetSizeMb.value
         : undefined
     let watermark: CompressOptions['watermark']
-    if (taskMode.value !== 'audio' && watermarkMode.value !== 'none') {
+    if (
+      taskMode.value === 'compress' &&
+      watermarkMode.value !== 'none'
+    ) {
       const opacity =
         typeof watermarkOpacity.value === 'number' &&
         Number.isFinite(watermarkOpacity.value)
@@ -246,6 +354,124 @@ export function useSettings(options: UseSettingsOptions = {}) {
             encodePreset: preset,
             watermark
           }
+
+    // 分辨率模式：custom 写入完整字段；预设保持仅 maxEdge（兼容）
+    if (taskMode.value === 'compress' && presetId.value === 'custom') {
+      const sm = scaleMode.value
+      base.scaleMode = sm
+      if (sm === 'fixed') {
+        base.outWidth =
+          typeof outWidth.value === 'number' && outWidth.value > 0
+            ? Math.round(outWidth.value)
+            : undefined
+        base.outHeight =
+          typeof outHeight.value === 'number' && outHeight.value > 0
+            ? Math.round(outHeight.value)
+            : undefined
+        base.scalePad = scalePad.value === 'none' ? 'none' : 'black'
+      } else if (sm === 'aspect') {
+        base.aspectRatio = aspectRatio.value
+        base.outWidth =
+          typeof outWidth.value === 'number' && outWidth.value > 0
+            ? Math.round(outWidth.value)
+            : undefined
+        // aspect 可用 maxEdge 作长边回退
+        base.scalePad = scalePad.value === 'none' ? 'none' : 'black'
+      } else if (sm === 'none') {
+        base.maxEdge = 0
+      }
+      // maxEdge 模式：沿用 custom.maxEdge
+    }
+
+    const cropRect = buildCropRect()
+    if (isImageTaskMode(taskMode.value)) {
+      base.image = {
+        format: imageFormat.value,
+        quality: imageQuality.value,
+        maxEdge: imageMaxEdge.value,
+        strip: imageStrip.value,
+        layout: imageLayout.value,
+        gridCols: imageGridCols.value,
+        gap: imageGap.value,
+        background: imageBackground.value || '#000000',
+        ...(cropRect ? { crop: cropRect } : {})
+      }
+      if (cropRect && taskMode.value === 'image-crop') {
+        base.crop = cropRect
+      }
+    } else if (taskMode.value === 'compress' && cropRect) {
+      base.crop = cropRect
+    }
+
+    if (taskMode.value === 'video-concat') {
+      base.concatPreferCopy = concatPreferCopy.value
+    }
+
+    if (taskMode.value === 'media-compose') {
+      const compose: NonNullable<CompressOptions['compose']> = {}
+      if (composeIntroPath.value.trim()) {
+        compose.intro = {
+          imagePath: composeIntroPath.value.trim(),
+          durationSec:
+            typeof composeIntroDuration.value === 'number' &&
+            composeIntroDuration.value > 0
+              ? composeIntroDuration.value
+              : 3
+        }
+      }
+      if (composeOutroPath.value.trim()) {
+        compose.outro = {
+          imagePath: composeOutroPath.value.trim(),
+          durationSec:
+            typeof composeOutroDuration.value === 'number' &&
+            composeOutroDuration.value > 0
+              ? composeOutroDuration.value
+              : 3
+        }
+      }
+      if (composeOverlayPath.value.trim()) {
+        const opacity =
+          typeof composeOverlayOpacity.value === 'number' &&
+          Number.isFinite(composeOverlayOpacity.value)
+            ? Math.max(0, Math.min(1, composeOverlayOpacity.value))
+            : 0.8
+        const scalePct =
+          typeof composeOverlayScalePercent.value === 'number' &&
+          Number.isFinite(composeOverlayScalePercent.value)
+            ? Math.max(1, Math.min(100, composeOverlayScalePercent.value))
+            : 15
+        const margin =
+          typeof composeOverlayMargin.value === 'number' &&
+          Number.isFinite(composeOverlayMargin.value)
+            ? Math.max(0, Math.round(composeOverlayMargin.value))
+            : 16
+        const startSec =
+          typeof composeOverlayStartSec.value === 'number' &&
+          composeOverlayStartSec.value > 0
+            ? composeOverlayStartSec.value
+            : undefined
+        const endSec =
+          typeof composeOverlayEndSec.value === 'number' &&
+          composeOverlayEndSec.value > 0
+            ? composeOverlayEndSec.value
+            : undefined
+        compose.overlay = {
+          imagePath: composeOverlayPath.value.trim(),
+          position: composeOverlayPosition.value || 'br',
+          opacity,
+          scalePercent: scalePct,
+          marginX: margin,
+          marginY: margin,
+          startSec,
+          endSec
+        }
+      }
+      if (composeFitIntroOutro.value === false) {
+        compose.fitIntroOutro = false
+      }
+      base.compose = compose
+    }
+
     return base
   }
 
@@ -258,6 +484,11 @@ export function useSettings(options: UseSettingsOptions = {}) {
     customCrf: number
     customMaxEdge: number
     customFormat: OutputFormat
+    scaleMode: ScaleMode
+    outWidth: number
+    outHeight: number
+    aspectRatio: AspectRatioId
+    scalePad: ScalePadMode
     nameTemplate: string
     outputDirMode: OutputDirMode
     targetSizeMb: number
@@ -271,6 +502,15 @@ export function useSettings(options: UseSettingsOptions = {}) {
     closeAction: CloseAction
     imageEngine: ImageEngineId
     imagemagickPath: string
+    imageFormat: AppSettings['imageFormat']
+    imageQuality: number
+    imageMaxEdge: number
+    imageStrip: boolean
+    imageLayout: AppSettings['imageLayout']
+    imageGridCols: number
+    imageGap: number
+    imageBackground: string
+    concatPreferCopy: boolean
   }>): void {
     if (persistTimer) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
@@ -282,6 +522,11 @@ export function useSettings(options: UseSettingsOptions = {}) {
         customCrf: custom.crf,
         customMaxEdge: custom.maxEdge,
         customFormat: custom.format,
+        scaleMode: scaleMode.value,
+        outWidth: outWidth.value,
+        outHeight: outHeight.value,
+        aspectRatio: aspectRatio.value,
+        scalePad: scalePad.value,
         nameTemplate: nameTemplate.value,
         outputDirMode: outputDirMode.value,
         targetSizeMb: targetSizeMb.value,
@@ -294,7 +539,16 @@ export function useSettings(options: UseSettingsOptions = {}) {
         theme: theme.value,
         closeAction: closeAction.value,
         imageEngine: imageEngine.value,
-        imagemagickPath: imagemagickPath.value
+        imagemagickPath: imagemagickPath.value,
+        imageFormat: imageFormat.value,
+        imageQuality: imageQuality.value,
+        imageMaxEdge: imageMaxEdge.value,
+        imageStrip: imageStrip.value,
+        imageLayout: imageLayout.value,
+        imageGridCols: imageGridCols.value,
+        imageGap: imageGap.value,
+        imageBackground: imageBackground.value,
+        concatPreferCopy: concatPreferCopy.value
       }
       void window.electronAPI.setSettings(payload)
     }, 300)
@@ -317,15 +571,33 @@ export function useSettings(options: UseSettingsOptions = {}) {
     custom.crf = s.customCrf ?? 23
     custom.maxEdge = s.customMaxEdge ?? 0
     custom.format = s.customFormat || 'mp4'
+    scaleMode.value =
+      s.scaleMode === 'none' ||
+      s.scaleMode === 'maxEdge' ||
+      s.scaleMode === 'fixed' ||
+      s.scaleMode === 'aspect'
+        ? s.scaleMode
+        : 'maxEdge'
+    outWidth.value =
+      typeof s.outWidth === 'number' && Number.isFinite(s.outWidth) && s.outWidth > 0
+        ? Math.round(s.outWidth)
+        : 1920
+    outHeight.value =
+      typeof s.outHeight === 'number' &&
+      Number.isFinite(s.outHeight) &&
+      s.outHeight > 0
+        ? Math.round(s.outHeight)
+        : 1080
+    aspectRatio.value =
+      s.aspectRatio === '16:9' ||
+      s.aspectRatio === '9:16' ||
+      s.aspectRatio === '1:1' ||
+      s.aspectRatio === '4:3'
+        ? s.aspectRatio
+        : '16:9'
+    scalePad.value = s.scalePad === 'none' ? 'none' : 'black'
     nameTemplate.value = s.nameTemplate || DEFAULT_NAME_TEMPLATE
-    // 若模板不在预设列表中，视为自定义
-    const presets = [
-      '{name}_compressed',
-      '{name}_audio',
-      '{name}_{preset}',
-      '{name}_{date}'
-    ]
-    nameTemplateCustom.value = !presets.includes(nameTemplate.value)
+    nameTemplateCustom.value = !BUILTIN_NAME_TEMPLATES.has(nameTemplate.value)
     outputDirMode.value =
       s.outputDirMode === 'sidecar' || s.outputDirMode === 'dated'
         ? s.outputDirMode
@@ -335,7 +607,16 @@ export function useSettings(options: UseSettingsOptions = {}) {
         ? Math.max(0, s.targetSizeMb)
         : 0
     twoPass.value = typeof s.twoPass === 'boolean' ? s.twoPass : true
-    taskMode.value = s.taskMode === 'audio' ? 'audio' : 'compress'
+    taskMode.value =
+      s.taskMode === 'audio' ||
+      s.taskMode === 'image' ||
+      s.taskMode === 'image-crop' ||
+      s.taskMode === 'image-stitch' ||
+      s.taskMode === 'video-concat' ||
+      s.taskMode === 'media-compose' ||
+      s.taskMode === 'compress'
+        ? s.taskMode
+        : 'compress'
     audioFormat.value = s.audioFormat || 'm4a'
     audioBitrate.value = s.audioBitrate || DEFAULT_AUDIO_BITRATE
     notifyOnComplete.value =
@@ -351,6 +632,42 @@ export function useSettings(options: UseSettingsOptions = {}) {
     imageEngine.value = s.imageEngine === 'imagemagick' ? 'imagemagick' : 'sharp'
     imagemagickPath.value =
       typeof s.imagemagickPath === 'string' ? s.imagemagickPath : ''
+    imageFormat.value =
+      s.imageFormat === 'png' ||
+      s.imageFormat === 'webp' ||
+      s.imageFormat === 'keep' ||
+      s.imageFormat === 'jpeg'
+        ? s.imageFormat
+        : 'jpeg'
+    imageQuality.value =
+      typeof s.imageQuality === 'number' && Number.isFinite(s.imageQuality)
+        ? Math.max(1, Math.min(100, Math.round(s.imageQuality)))
+        : 80
+    imageMaxEdge.value =
+      typeof s.imageMaxEdge === 'number' && Number.isFinite(s.imageMaxEdge)
+        ? Math.max(0, Math.round(s.imageMaxEdge))
+        : 1920
+    imageStrip.value = typeof s.imageStrip === 'boolean' ? s.imageStrip : true
+    imageLayout.value =
+      s.imageLayout === 'vertical' ||
+      s.imageLayout === 'grid' ||
+      s.imageLayout === 'horizontal'
+        ? s.imageLayout
+        : 'horizontal'
+    imageGridCols.value =
+      typeof s.imageGridCols === 'number' && Number.isFinite(s.imageGridCols)
+        ? Math.max(1, Math.min(20, Math.round(s.imageGridCols)))
+        : 2
+    imageGap.value =
+      typeof s.imageGap === 'number' && Number.isFinite(s.imageGap)
+        ? Math.max(0, Math.round(s.imageGap))
+        : 0
+    imageBackground.value =
+      typeof s.imageBackground === 'string' && s.imageBackground.trim()
+        ? s.imageBackground.trim()
+        : '#000000'
+    concatPreferCopy.value =
+      typeof s.concatPreferCopy === 'boolean' ? s.concatPreferCopy : true
     closeAction.value =
       s.closeAction === 'tray' || s.closeAction === 'quit' || s.closeAction === 'ask'
         ? s.closeAction
@@ -420,7 +737,21 @@ export function useSettings(options: UseSettingsOptions = {}) {
 
   function maybeWarnHwConcurrency(enc: EncoderId, n: number): void {
     const isHw =
-      enc === 'nvenc' || enc === 'qsv' || enc === 'amf' || enc === 'videotoolbox'
+      enc === 'auto' ||
+      enc === 'nvenc' ||
+      enc === 'qsv' ||
+      enc === 'amf' ||
+      enc === 'videotoolbox' ||
+      enc === 'h264_nvenc' ||
+      enc === 'h264_qsv' ||
+      enc === 'h264_amf' ||
+      enc === 'h264_videotoolbox' ||
+      enc === 'h264_mf' ||
+      enc === 'hevc_nvenc' ||
+      enc === 'hevc_qsv' ||
+      enc === 'hevc_amf' ||
+      enc === 'hevc_videotoolbox' ||
+      enc === 'hevc_mf'
     if (isHw && n > 2 && !hwConcurrencyWarned) {
       hwConcurrencyWarned = true
       ElMessage.warning(CONCURRENCY_HINT)
@@ -493,21 +824,127 @@ export function useSettings(options: UseSettingsOptions = {}) {
   }
 
   /**
-   * 切换任务模式；若仍是默认压缩模板则切到 audio 时自动改为 {name}_audio
+   * 切换任务模式；若当前是内置默认模板则自动切换到对应模式模板
    */
   function onTaskModeChange(mode: TaskMode): void {
     taskMode.value = mode
-    if (mode === 'audio' && nameTemplate.value === DEFAULT_NAME_TEMPLATE) {
-      nameTemplate.value = DEFAULT_AUDIO_NAME_TEMPLATE
-      nameTemplateCustom.value = false
-    } else if (mode === 'compress' && nameTemplate.value === DEFAULT_AUDIO_NAME_TEMPLATE) {
-      nameTemplate.value = DEFAULT_NAME_TEMPLATE
-      nameTemplateCustom.value = false
+    const cur = nameTemplate.value
+    const isBuiltin = BUILTIN_NAME_TEMPLATES.has(cur)
+    if (isBuiltin) {
+      if (isImageTaskMode(mode)) {
+        nameTemplate.value = DEFAULT_IMAGE_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      } else if (mode === 'video-concat') {
+        nameTemplate.value = DEFAULT_CONCAT_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      } else if (mode === 'media-compose') {
+        nameTemplate.value = DEFAULT_COMPOSE_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      } else if (mode === 'audio') {
+        nameTemplate.value = DEFAULT_AUDIO_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      } else if (mode === 'compress') {
+        nameTemplate.value = DEFAULT_NAME_TEMPLATE
+        nameTemplateCustom.value = false
+      }
     }
     persist({
       taskMode: mode,
       nameTemplate: nameTemplate.value
     })
+    options.onOptionsChange?.()
+  }
+
+  function onImageFormatChange(v: AppSettings['imageFormat']): void {
+    imageFormat.value =
+      v === 'png' || v === 'webp' || v === 'keep' || v === 'jpeg' ? v : 'jpeg'
+    persist({ imageFormat: imageFormat.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageQualityChange(v: number): void {
+    imageQuality.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(1, Math.min(100, Math.round(v)))
+        : 80
+    persist({ imageQuality: imageQuality.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageMaxEdgeChange(v: number): void {
+    imageMaxEdge.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.round(v))
+        : 1920
+    persist({ imageMaxEdge: imageMaxEdge.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageStripChange(v: boolean): void {
+    imageStrip.value = Boolean(v)
+    persist({ imageStrip: imageStrip.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageLayoutChange(v: AppSettings['imageLayout']): void {
+    imageLayout.value =
+      v === 'vertical' || v === 'grid' || v === 'horizontal' ? v : 'horizontal'
+    persist({ imageLayout: imageLayout.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageGridColsChange(v: number): void {
+    imageGridCols.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(1, Math.min(20, Math.round(v)))
+        : 2
+    persist({ imageGridCols: imageGridCols.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageGapChange(v: number): void {
+    imageGap.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.round(v))
+        : 0
+    persist({ imageGap: imageGap.value })
+    options.onOptionsChange?.()
+  }
+
+  function onImageBackgroundChange(v: string): void {
+    imageBackground.value =
+      typeof v === 'string' && v.trim() ? v.trim() : '#000000'
+    persist({ imageBackground: imageBackground.value })
+    options.onOptionsChange?.()
+  }
+
+  function onCropXChange(v: number): void {
+    cropX.value =
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0
+    options.onOptionsChange?.()
+  }
+
+  function onCropYChange(v: number): void {
+    cropY.value =
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0
+    options.onOptionsChange?.()
+  }
+
+  function onCropWChange(v: number): void {
+    cropW.value =
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0
+    options.onOptionsChange?.()
+  }
+
+  function onCropHChange(v: number): void {
+    cropH.value =
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0
+    options.onOptionsChange?.()
+  }
+
+  function onConcatPreferCopyChange(v: boolean): void {
+    concatPreferCopy.value = Boolean(v)
+    persist({ concatPreferCopy: concatPreferCopy.value })
     options.onOptionsChange?.()
   }
 
@@ -664,6 +1101,110 @@ export function useSettings(options: UseSettingsOptions = {}) {
     }
   }
 
+  function notifyComposeChange(): void {
+    options.onOptionsChange?.()
+  }
+
+  function onComposeIntroPathChange(v: string): void {
+    composeIntroPath.value = typeof v === 'string' ? v : ''
+    notifyComposeChange()
+  }
+
+  function onComposeIntroDurationChange(v: number): void {
+    composeIntroDuration.value =
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 3
+    notifyComposeChange()
+  }
+
+  function onComposeOutroPathChange(v: string): void {
+    composeOutroPath.value = typeof v === 'string' ? v : ''
+    notifyComposeChange()
+  }
+
+  function onComposeOutroDurationChange(v: number): void {
+    composeOutroDuration.value =
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 3
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayPathChange(v: string): void {
+    composeOverlayPath.value = typeof v === 'string' ? v : ''
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayPositionChange(v: WatermarkPosition): void {
+    composeOverlayPosition.value = v || 'br'
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayOpacityChange(v: number): void {
+    composeOverlayOpacity.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.min(1, v))
+        : 0.8
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayScalePercentChange(v: number): void {
+    composeOverlayScalePercent.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(1, Math.min(100, v))
+        : 15
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayMarginChange(v: number): void {
+    composeOverlayMargin.value =
+      typeof v === 'number' && Number.isFinite(v)
+        ? Math.max(0, Math.round(v))
+        : 16
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayStartSecChange(v: number): void {
+    composeOverlayStartSec.value =
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
+    notifyComposeChange()
+  }
+
+  function onComposeOverlayEndSecChange(v: number): void {
+    composeOverlayEndSec.value =
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
+    notifyComposeChange()
+  }
+
+  function onComposeFitIntroOutroChange(v: boolean): void {
+    composeFitIntroOutro.value = Boolean(v)
+    notifyComposeChange()
+  }
+
+  async function pickComposeImage(
+    target: 'intro' | 'outro' | 'overlay'
+  ): Promise<void> {
+    try {
+      const res = await window.electronAPI.selectImage()
+      if (!res.path) return
+      if (target === 'intro') composeIntroPath.value = res.path
+      else if (target === 'outro') composeOutroPath.value = res.path
+      else composeOverlayPath.value = res.path
+      notifyComposeChange()
+    } catch {
+      // ignore
+    }
+  }
+
+  async function onSelectComposeIntroImage(): Promise<void> {
+    await pickComposeImage('intro')
+  }
+
+  async function onSelectComposeOutroImage(): Promise<void> {
+    await pickComposeImage('outro')
+  }
+
+  async function onSelectComposeOverlayImage(): Promise<void> {
+    await pickComposeImage('overlay')
+  }
+
   async function onSelectOutput(): Promise<void> {
     const res = await window.electronAPI.selectDirectory(outputDir.value || undefined)
     if (res.path) {
@@ -672,11 +1213,61 @@ export function useSettings(options: UseSettingsOptions = {}) {
     }
   }
 
+  function onScaleModeChange(v: ScaleMode): void {
+    scaleMode.value =
+      v === 'none' || v === 'maxEdge' || v === 'fixed' || v === 'aspect'
+        ? v
+        : 'maxEdge'
+    persist({ scaleMode: scaleMode.value })
+    options.onOptionsChange?.()
+  }
+
+  function onOutWidthChange(v: number): void {
+    outWidth.value =
+      typeof v === 'number' && Number.isFinite(v) && v >= 0
+        ? Math.round(v)
+        : 1920
+    persist({ outWidth: outWidth.value })
+    options.onOptionsChange?.()
+  }
+
+  function onOutHeightChange(v: number): void {
+    outHeight.value =
+      typeof v === 'number' && Number.isFinite(v) && v >= 0
+        ? Math.round(v)
+        : 1080
+    persist({ outHeight: outHeight.value })
+    options.onOptionsChange?.()
+  }
+
+  function onAspectRatioChange(v: AspectRatioId): void {
+    aspectRatio.value =
+      v === '16:9' || v === '9:16' || v === '1:1' || v === '4:3' ? v : '16:9'
+    persist({ aspectRatio: aspectRatio.value })
+    options.onOptionsChange?.()
+  }
+
+  function onScalePadChange(v: ScalePadMode): void {
+    scalePad.value = v === 'none' ? 'none' : 'black'
+    persist({ scalePad: scalePad.value })
+    options.onOptionsChange?.()
+  }
+
   /** 监听自定义参数变更：同步 pending 任务并持久化 */
   function startWatchers(): void {
     stopCustomWatch?.()
     stopCustomWatch = watch(
-      () => [custom.crf, custom.maxEdge, custom.format] as const,
+      () =>
+        [
+          custom.crf,
+          custom.maxEdge,
+          custom.format,
+          scaleMode.value,
+          outWidth.value,
+          outHeight.value,
+          aspectRatio.value,
+          scalePad.value
+        ] as const,
       () => {
         if (presetId.value === 'custom') {
           options.onOptionsChange?.()
@@ -684,7 +1275,12 @@ export function useSettings(options: UseSettingsOptions = {}) {
         persist({
           customCrf: custom.crf,
           customMaxEdge: custom.maxEdge,
-          customFormat: custom.format
+          customFormat: custom.format,
+          scaleMode: scaleMode.value,
+          outWidth: outWidth.value,
+          outHeight: outHeight.value,
+          aspectRatio: aspectRatio.value,
+          scalePad: scalePad.value
         })
       }
     )
@@ -718,6 +1314,31 @@ export function useSettings(options: UseSettingsOptions = {}) {
     ffmpegBinDir,
     imageEngine,
     imagemagickPath,
+    imageFormat,
+    imageQuality,
+    imageMaxEdge,
+    imageStrip,
+    imageLayout,
+    imageGridCols,
+    imageGap,
+    imageBackground,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+    concatPreferCopy,
+    composeIntroPath,
+    composeIntroDuration,
+    composeOutroPath,
+    composeOutroDuration,
+    composeOverlayPath,
+    composeOverlayPosition,
+    composeOverlayOpacity,
+    composeOverlayScalePercent,
+    composeOverlayMargin,
+    composeOverlayStartSec,
+    composeOverlayEndSec,
+    composeFitIntroOutro,
     closeAction,
     trimStart,
     trimEnd,
@@ -736,10 +1357,19 @@ export function useSettings(options: UseSettingsOptions = {}) {
     watermarkFontSize,
     watermarkMargin,
     custom,
+    scaleMode,
+    outWidth,
+    outHeight,
+    aspectRatio,
+    scalePad,
     currentPreset,
     isCustom,
     isWebm,
     isAudioMode,
+    isImageMode,
+    isVideoConcatMode,
+    isMediaComposeMode,
+    isVideoCompressMode,
     buildOptions,
     loadSettings,
     applyLoadedSettings,
@@ -758,6 +1388,19 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onTwoPassChange,
     onThemeChange,
     onTaskModeChange,
+    onImageFormatChange,
+    onImageQualityChange,
+    onImageMaxEdgeChange,
+    onImageStripChange,
+    onImageLayoutChange,
+    onImageGridColsChange,
+    onImageGapChange,
+    onImageBackgroundChange,
+    onCropXChange,
+    onCropYChange,
+    onCropWChange,
+    onCropHChange,
+    onConcatPreferCopyChange,
     onAudioFormatChange,
     onAudioBitrateChange,
     onNotifyOnCompleteChange,
@@ -779,7 +1422,27 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onWatermarkScalePercentChange,
     onWatermarkFontSizeChange,
     onWatermarkMarginChange,
+    onScaleModeChange,
+    onOutWidthChange,
+    onOutHeightChange,
+    onAspectRatioChange,
+    onScalePadChange,
     onSelectWatermarkImage,
+    onComposeIntroPathChange,
+    onComposeIntroDurationChange,
+    onComposeOutroPathChange,
+    onComposeOutroDurationChange,
+    onComposeOverlayPathChange,
+    onComposeOverlayPositionChange,
+    onComposeOverlayOpacityChange,
+    onComposeOverlayScalePercentChange,
+    onComposeOverlayMarginChange,
+    onComposeOverlayStartSecChange,
+    onComposeOverlayEndSecChange,
+    onComposeFitIntroOutroChange,
+    onSelectComposeIntroImage,
+    onSelectComposeOutroImage,
+    onSelectComposeOverlayImage,
     onSelectOutput,
     startWatchers,
     stopWatchers

@@ -15,23 +15,41 @@ import type {
   AppSettings,
   CloseAction,
   CompressTask,
-  ImageProcessOptions
+  ImageProcessOptions,
+  LanRemoteConfigInput
 } from '../../shared/types'
-import {IpcChannels, VIDEO_EXTENSIONS} from '../../shared/types'
-import {checkFfmpegAvailable, detectHardwareEncoders, setBinaryOverride} from './ffmpeg'
 import {
+  IMAGE_EXTENSIONS,
+  IpcChannels,
+  VIDEO_EXTENSIONS
+} from '../../shared/types'
+import {
+  checkFfmpegAvailable,
+  detectHardwareEncoders,
+  extractVideoFrame,
+  setBinaryOverride
+} from './ffmpeg'
+import {
+  getImageDataUrl,
   getImageEngineStatus,
+  getImageInfo,
   processImage,
   setImageEngine,
   setMagickPath
 } from './image'
-import {collectVideoFiles} from './mediaScan'
+import {collectMediaFiles} from './mediaScan'
 import {getSettings, loadSettings, resetSettings, saveSettings} from './settings'
 import {clearStoredTasks, loadTasks, saveTasks} from './taskStore'
 import {applyAppIdentity, applyUserDataOverride, setUserDataDir} from './dataDir'
 import {APP_ID, PRODUCT_NAME} from '../../shared/brand'
 import {taskQueue} from './taskQueue'
 import {initAutoUpdater, registerUpdaterIpc} from './updater'
+import {
+  applyLanRemoteConfig,
+  getLanStatus,
+  stopLanServer,
+  syncLanServerFromSettings
+} from './lanServer'
 
 // 固定 ASCII 应用名后再读 userData，避免落到中文产品名目录
 applyAppIdentity()
@@ -92,6 +110,7 @@ function quitApp(): void {
   allowQuit = true
   closeAskPending = false
   taskQueue.cancelAll()
+  stopLanServer()
   if (tray) {
     tray.destroy()
     tray = null
@@ -336,22 +355,109 @@ function createWindow(): void {
   }
 }
 
-function isVideoFile(filePath: string): boolean {
+function isMediaFile(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase()
-  return (VIDEO_EXTENSIONS as string[]).includes(ext)
+  return (
+    (VIDEO_EXTENSIONS as string[]).includes(ext) ||
+    (IMAGE_EXTENSIONS as string[]).includes(ext)
+  )
+}
+
+/** 解析任务输入路径列表 */
+function resolveTaskInputPaths(task: CompressTask): string[] {
+  const multi = (task.inputPaths || [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+  if (multi.length > 0) return multi
+  const single =
+    typeof task.inputPath === 'string' ? task.inputPath.trim() : ''
+  return single ? [single] : []
+}
+
+/**
+ * 校验启动任务：路径存在、输出目录、引擎依赖
+ * skipEngineCheck：批量入口已统一检查引擎时使用
+ */
+function validateStartTask(
+  task: CompressTask | null | undefined,
+  opts?: { skipEngineCheck?: boolean }
+): { ok: true; paths: string[] } | { ok: false; error: string } {
+  if (!task) {
+    return { ok: false, error: '任务无效' }
+  }
+
+  const paths = resolveTaskInputPaths(task)
+  if (paths.length === 0) {
+    return { ok: false, error: '输入文件不存在' }
+  }
+  for (const p of paths) {
+    if (!existsSync(p)) {
+      return { ok: false, error: `输入文件不存在: ${basename(p)}` }
+    }
+  }
+
+  const dirMode = task.options?.outputDirMode || 'fixed'
+  if (dirMode !== 'sidecar' && !task.options?.outputDir) {
+    return { ok: false, error: '请先选择输出目录' }
+  }
+
+  const mode = task.options?.mode
+  const isImage =
+    mode === 'image' || mode === 'image-crop' || mode === 'image-stitch'
+
+  if (mode === 'image-stitch' && paths.length < 2) {
+    return { ok: false, error: '图片拼接至少需要 2 张图片' }
+  }
+  if (mode === 'video-concat' && paths.length < 2) {
+    return { ok: false, error: '视频拼接至少需要 2 个输入文件' }
+  }
+
+  if (!opts?.skipEngineCheck) {
+    if (isImage) {
+      const img = getImageEngineStatus()
+      if (!img.sharpReady && !img.magickReady) {
+        return {
+          ok: false,
+          error: img.error || '图片引擎不可用（Sharp / ImageMagick）'
+        }
+      }
+      if (mode === 'image-stitch' && !img.sharpReady) {
+        return { ok: false, error: '拼接请使用 Sharp 引擎（当前 Sharp 不可用）' }
+      }
+    } else {
+      const status = checkFfmpegAvailable()
+      if (!status.ready) {
+        return { ok: false, error: status.error || 'ffmpeg 未就绪' }
+      }
+    }
+  }
+
+  return { ok: true, paths }
 }
 
 function registerIpc(): void {
   ipcMain.handle(IpcChannels.SELECT_FILES, async () => {
     if (!mainWindow) return { files: [] }
 
+    const videoExts = VIDEO_EXTENSIONS.map((e) => e.replace('.', ''))
+    const imageExts = IMAGE_EXTENSIONS.map((e) => e.replace('.', ''))
+    const mediaExts = Array.from(new Set(videoExts.concat(imageExts)))
+
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择视频文件',
+      title: '选择媒体文件',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
+          name: '媒体文件',
+          extensions: mediaExts
+        },
+        {
           name: '视频文件',
-          extensions: VIDEO_EXTENSIONS.map((e) => e.replace('.', ''))
+          extensions: videoExts
+        },
+        {
+          name: '图片文件',
+          extensions: imageExts
         },
         { name: '所有文件', extensions: ['*'] }
       ]
@@ -361,8 +467,9 @@ function registerIpc(): void {
       return { files: [] }
     }
 
+    // 同时允许视频+图片，由渲染进程按当前 taskMode 再过滤
     const files = result.filePaths
-      .filter(isVideoFile)
+      .filter(isMediaFile)
       .map((p) => ({ path: p, name: basename(p) }))
 
     return { files }
@@ -464,6 +571,8 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannels.SETTINGS_SET, async (_e, partial: Partial<AppSettings>) => {
     // ffmpeg bin 目录需主进程校验；无效则回退不保存（避免把无效目录写盘）
     const part = { ...(partial || {}) }
+    // 局域网密码哈希仅允许通过 LAN_SET_CONFIG 写入，避免明文/误改
+    delete (part as Partial<AppSettings> & { lanPasswordHash?: string }).lanPasswordHash
     if (typeof part.ffmpegBinDir === 'string') {
       const override = setBinaryOverride(part.ffmpegBinDir)
       if (!override.accepted) {
@@ -476,6 +585,7 @@ function registerIpc(): void {
         delete part.imagemagickPath
       }
     }
+    const prev = getSettings()
     const next = saveSettings(part)
     if (typeof part.concurrency === 'number') {
       taskQueue.setConcurrency(next.concurrency)
@@ -483,17 +593,39 @@ function registerIpc(): void {
     if (typeof part.imageEngine === 'string') {
       setImageEngine(next.imageEngine)
     }
+    // 局域网开关/端口/用户名变更时同步 HTTP 服务
+    const lanChanged =
+      next.lanRemoteEnabled !== prev.lanRemoteEnabled ||
+      next.lanPort !== prev.lanPort ||
+      next.lanUsername !== prev.lanUsername
+    if (lanChanged) {
+      void syncLanServerFromSettings()
+    }
     return next
   })
 
   // 重置全部设置为默认（删除设置文件、清除 ffmpeg / magick 覆盖）
   ipcMain.handle(IpcChannels.SETTINGS_RESET, async () => {
+    stopLanServer()
     const next = resetSettings()
     setBinaryOverride('')
     setMagickPath('')
     setImageEngine(next.imageEngine)
     return next
   })
+
+  // 局域网远程访问状态
+  ipcMain.handle(IpcChannels.LAN_GET_STATUS, async () => {
+    return getLanStatus()
+  })
+
+  // 局域网远程访问配置（开关/端口/账号/密码）
+  ipcMain.handle(
+    IpcChannels.LAN_SET_CONFIG,
+    async (_e, config: LanRemoteConfigInput) => {
+      return applyLanRemoteConfig(config || {})
+    }
+  )
 
   // 自定义 ffmpeg bin 目录（空串=清除覆盖）
   ipcMain.handle(IpcChannels.FFMPEG_SET_BIN_DIR, async (_e, dir: string) => {
@@ -526,6 +658,36 @@ function registerIpc(): void {
     saveSettings({ imagemagickPath: value })
     return { ok: true }
   })
+
+  ipcMain.handle(IpcChannels.IMAGE_GET_INFO, async (_e, filePath: string) => {
+    return getImageInfo(typeof filePath === 'string' ? filePath : '')
+  })
+
+  ipcMain.handle(
+    IpcChannels.IMAGE_GET_DATA_URL,
+    async (_e, filePath: string, maxEdge?: number) => {
+      return getImageDataUrl(
+        typeof filePath === 'string' ? filePath : '',
+        typeof maxEdge === 'number' ? maxEdge : undefined
+      )
+    }
+  )
+
+  ipcMain.handle(
+    IpcChannels.VIDEO_EXTRACT_FRAME,
+    async (
+      _e,
+      opts: { path?: string; timeSec?: number; maxEdge?: number }
+    ) => {
+      return extractVideoFrame({
+        path: typeof opts?.path === 'string' ? opts.path : '',
+        timeSec:
+          typeof opts?.timeSec === 'number' ? opts.timeSec : undefined,
+        maxEdge:
+          typeof opts?.maxEdge === 'number' ? opts.maxEdge : undefined
+      })
+    }
+  )
 
   // 清空已持久化任务
   ipcMain.handle(IpcChannels.TASKS_CLEAR, async () => {
@@ -585,17 +747,9 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannels.START_TASK, async (_e, task: CompressTask) => {
     try {
-      if (!task?.inputPath || !existsSync(task.inputPath)) {
-        return { ok: false, error: '输入文件不存在' }
-      }
-      // sidecar 可不选固定输出目录；其它模式仍需 outputDir
-      const dirMode = task.options?.outputDirMode || 'fixed'
-      if (dirMode !== 'sidecar' && !task.options?.outputDir) {
-        return { ok: false, error: '请先选择输出目录' }
-      }
-      const status = checkFfmpegAvailable()
-      if (!status.ready) {
-        return { ok: false, error: status.error || 'ffmpeg 未就绪' }
+      const validated = validateStartTask(task)
+      if (!validated.ok) {
+        return { ok: false, error: validated.error }
       }
 
       // 补齐默认 encoder；输出路径由队列按 options 重建
@@ -606,6 +760,9 @@ function registerIpc(): void {
 
       taskQueue.enqueue({
         ...task,
+        inputPath: validated.paths[0],
+        inputPaths:
+          validated.paths.length > 1 ? validated.paths : task.inputPaths,
         options,
         outputPath: '',
         status: 'queued',
@@ -620,22 +777,49 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannels.START_TASKS, async (_e, tasks: CompressTask[]) => {
     try {
-      const status = checkFfmpegAvailable()
-      if (!status.ready) {
-        return { ok: false, error: status.error || 'ffmpeg 未就绪' }
-      }
       if (!Array.isArray(tasks) || tasks.length === 0) {
         return { ok: false, error: '没有可执行的任务' }
       }
 
+      // 按模式检查依赖（图片不强制 ffmpeg）
+      let needFfmpeg = false
+      let needImage = false
+      for (const t of tasks) {
+        const mode = t?.options?.mode
+        if (
+          mode === 'image' ||
+          mode === 'image-crop' ||
+          mode === 'image-stitch'
+        ) {
+          needImage = true
+        } else {
+          needFfmpeg = true
+        }
+      }
+      if (needFfmpeg) {
+        const status = checkFfmpegAvailable()
+        if (!status.ready) {
+          return { ok: false, error: status.error || 'ffmpeg 未就绪' }
+        }
+      }
+      if (needImage) {
+        const img = getImageEngineStatus()
+        if (!img.sharpReady && !img.magickReady) {
+          return {
+            ok: false,
+            error: img.error || '图片引擎不可用（Sharp / ImageMagick）'
+          }
+        }
+      }
+
       const prepared: CompressTask[] = []
       for (const task of tasks) {
-        if (!task?.inputPath || !existsSync(task.inputPath)) {
+        const validated = validateStartTask(task, {
+          skipEngineCheck: true
+        })
+        if (!validated.ok) {
+          // 批量时跳过无效项；若全部无效则后面报错
           continue
-        }
-        const dirMode = task.options?.outputDirMode || 'fixed'
-        if (dirMode !== 'sidecar' && !task.options?.outputDir) {
-          return { ok: false, error: '请先选择输出目录' }
         }
         const options = {
           ...task.options,
@@ -643,6 +827,9 @@ function registerIpc(): void {
         }
         prepared.push({
           ...task,
+          inputPath: validated.paths[0],
+          inputPaths:
+            validated.paths.length > 1 ? validated.paths : task.inputPaths,
           options,
           // 清空旧路径，由队列按最新 options 重建
           outputPath: '',
@@ -762,8 +949,8 @@ function registerIpc(): void {
       const paths = list
         .filter((f) => f && typeof f.path === 'string' && f.path.length > 0)
         .map((f) => f.path)
-      // 递归展开目录中的视频（深度 8，最多 500）
-      const filtered = collectVideoFiles(paths, 500)
+      // 递归展开目录中的视频+图片（深度 8，最多 500），由前端按 mode 过滤
+      const filtered = collectMediaFiles(paths, 500)
       console.log('[main] forward FILES_DROPPED filtered=', filtered.length, filtered)
       event.sender.send(IpcChannels.FILES_DROPPED, filtered)
     }
@@ -781,6 +968,10 @@ app.whenReady().then(() => {
   registerIpc()
   registerUpdaterIpc()
   createWindow()
+  // 若上次开启了局域网远程，启动时恢复 HTTP 服务
+  void syncLanServerFromSettings().catch((err) => {
+    console.warn('[main] syncLanServerFromSettings failed:', err)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -802,4 +993,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   allowQuit = true
   closeAskPending = false
+  stopLanServer()
 })

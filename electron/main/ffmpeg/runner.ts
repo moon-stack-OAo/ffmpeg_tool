@@ -60,11 +60,26 @@ const HW_ENCODERS: ResolvedEncoder[] = [
   'h264_nvenc',
   'h264_qsv',
   'h264_amf',
-  'h264_videotoolbox'
+  'h264_videotoolbox',
+  'h264_mf',
+  'hevc_nvenc',
+  'hevc_qsv',
+  'hevc_amf',
+  'hevc_videotoolbox',
+  'hevc_mf'
 ]
 
 function isHardwareResolved(enc: string): boolean {
   return (HW_ENCODERS as string[]).includes(enc)
+}
+
+/** 是否需要探测硬件（auto 或任意硬件/显式 codec） */
+function needsEncoderDetect(encoder: string | undefined): boolean {
+  if (!encoder || encoder === 'auto') return true
+  if (encoder === 'software' || encoder === 'libx264' || encoder === 'libx265') {
+    return encoder === 'libx265' // libx265 需确认列表存在
+  }
+  return true
 }
 
 /** 是否为 null 设备路径（两遍 pass1 输出） */
@@ -522,11 +537,7 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
   let detect = params.detect ?? null
   const needDetect =
     isH264Container(options.format || 'mp4') &&
-    (options.encoder === 'auto' ||
-      options.encoder === 'nvenc' ||
-      options.encoder === 'qsv' ||
-      options.encoder === 'amf' ||
-      options.encoder === 'videotoolbox')
+    needsEncoderDetect(options.encoder)
 
   if (needDetect && !detect) {
     try {
@@ -534,7 +545,12 @@ export async function runCompress(params: RunCompressParams): Promise<RunCompres
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       // 探测失败时 auto 可回退软件；指定硬件则报错
-      if (options.encoder && options.encoder !== 'auto' && options.encoder !== 'software') {
+      if (
+        options.encoder &&
+        options.encoder !== 'auto' &&
+        options.encoder !== 'software' &&
+        options.encoder !== 'libx264'
+      ) {
         return {
           code: 1,
           error: mapFfmpegError(`硬件编码器探测失败: ${msg}`, { inputPath, outputPath }),

@@ -99,7 +99,12 @@ export function mapFfmpegError(
     /cannot open encoder/i.test(text)
   ) {
     const enc = ctx?.resolvedEncoder
-    if (enc && enc !== 'libx264' && enc !== 'libvpx-vp9') {
+    if (
+      enc &&
+      enc !== 'libx264' &&
+      enc !== 'libx265' &&
+      enc !== 'libvpx-vp9'
+    ) {
       return `编码器初始化失败（${enc}）。可尝试软件 x264 或检查硬件驱动。`
     }
     return '编码器初始化失败。请检查参数后重试，或改用软件 x264。'
@@ -121,16 +126,28 @@ export function isHardwareEncoderFailure(
     enc === 'h264_qsv' ||
     enc === 'h264_amf' ||
     enc === 'h264_videotoolbox' ||
-    /nvenc|qsv|amf|videotoolbox/i.test(enc)
+    enc === 'h264_mf' ||
+    enc === 'hevc_nvenc' ||
+    enc === 'hevc_qsv' ||
+    enc === 'hevc_amf' ||
+    enc === 'hevc_videotoolbox' ||
+    enc === 'hevc_mf' ||
+    /nvenc|qsv|amf|videotoolbox|_mf\b|mediafoundation|hevc_/i.test(enc)
 
   if (!isHwEnc && enc) {
     // 明确是软件编码则不算硬件失败
-    if (enc === 'libx264' || enc === 'libvpx-vp9') return false
+    if (
+      enc === 'libx264' ||
+      enc === 'libx265' ||
+      enc === 'libvpx-vp9'
+    ) {
+      return false
+    }
   }
 
   const text = raw || ''
   if (
-    /nvenc|cuda|nvcuda|libcuda|qsv|quicksync|mfx|libmfx|\bamf\b|amfrt|h264_amf|videotoolbox|h264_videotoolbox|opencl|device|encoder not found|error while opening encoder|cannot open encoder|error initializing/i.test(
+    /nvenc|cuda|nvcuda|libcuda|qsv|quicksync|mfx|libmfx|\bamf\b|amfrt|h264_amf|hevc_amf|videotoolbox|h264_videotoolbox|hevc_videotoolbox|h264_mf|hevc_mf|mediafoundation|mf_|\bhevc_nvenc\b|\bhevc_qsv\b|opencl|device|encoder not found|error while opening encoder|cannot open encoder|error initializing/i.test(
       text
     )
   ) {

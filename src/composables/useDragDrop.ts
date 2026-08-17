@@ -116,7 +116,7 @@ export function useDragDrop(options: UseDragDropOptions) {
       if (!files.length) {
         // 另一通道刚成功添加则不弹警告
         if (Date.now() - options.lastDropOkAt.value < 800) return
-        ElMessage.warning('拖拽未识别到视频文件（或无法读取路径），请改用「添加视频」')
+        ElMessage.warning('拖拽未识别到媒体文件（或无法读取路径），请改用「添加文件」')
         return
       }
       options.addFiles(files)

@@ -1,13 +1,35 @@
 import { Notification, shell, type BrowserWindow } from 'electron'
 import path from 'path'
-import type { CompressTask, ProgressPayload, TaskEndPayload } from '../../shared/types'
+import type {
+  CompressTask,
+  ImageProcessOptions,
+  ProgressPayload,
+  TaskEndPayload
+} from '../../shared/types'
 import { IpcChannels } from '../../shared/types'
-import { buildOutputPath, detectHardwareEncoders, getFileSize, runCompress, uniqueOutputPath } from './ffmpeg'
+import { isImageMode } from '../../shared/ffmpegLogic'
+import {
+  buildOutputPath,
+  detectHardwareEncoders,
+  getFileSize,
+  runCompress,
+  runMediaCompose,
+  runVideoConcat,
+  uniqueOutputPath
+} from './ffmpeg'
+import { processImage } from './image'
 import { getSettings } from './settings'
 
 interface QueueItem {
   task: CompressTask
   signal: { cancelled: boolean }
+}
+
+/** 队列外部监听（局域网服务等） */
+export interface TaskQueueListener {
+  onProgress?: (payload: ProgressPayload) => void
+  onEnd?: (payload: TaskEndPayload) => void
+  onQueued?: (taskId: string, task: CompressTask) => void
 }
 
 /**
@@ -25,6 +47,7 @@ export class TaskQueue {
   private concurrency = 2
   /** 防止 pump 重入造成竞态 */
   private pumping = false
+  private listeners = new Set<TaskQueueListener>()
 
   /** 本批统计（running+queue 从 >0 变为 0 时汇总） */
   private batchCompleted = 0
@@ -37,6 +60,14 @@ export class TaskQueue {
 
   setWindow(win: BrowserWindow | null): void {
     this.win = win
+  }
+
+  /** 注册监听器，返回取消函数 */
+  addListener(listener: TaskQueueListener): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   setConcurrency(n: number): number {
@@ -125,25 +156,72 @@ export class TaskQueue {
     this.resetBatchStats()
   }
 
+  /** 解析任务输入路径列表 */
+  private resolveInputPaths(task: CompressTask): string[] {
+    const multi = (task.inputPaths || [])
+      .map((p) => (p || '').trim())
+      .filter(Boolean)
+    if (multi.length > 0) return multi
+    const single = (task.inputPath || '').trim()
+    return single ? [single] : []
+  }
+
+  /** 多文件输入大小求和 */
+  private sumInputSize(paths: string[]): number | undefined {
+    let total = 0
+    let any = false
+    for (const p of paths) {
+      const s = getFileSize(p)
+      if (typeof s === 'number') {
+        total += s
+        any = true
+      }
+    }
+    return any ? total : undefined
+  }
+
   enqueue(task: CompressTask): void {
+    const paths = this.resolveInputPaths(task)
+    const primaryInput = paths[0] || task.inputPath
     // 始终按当前 options 重建输出路径，避免旧模板/模式残留
-    const rawOut = buildOutputPath(task.inputPath, task.options)
+    const rawOut = buildOutputPath(primaryInput, task.options)
     const outputPath = uniqueOutputPath(rawOut)
-    // 任务开始前记录输入大小
-    const inputSize = task.inputSize ?? getFileSize(task.inputPath)
+    // 任务开始前记录输入大小（多输入求和）
+    const inputSize =
+      task.inputSize ??
+      (paths.length > 1
+        ? this.sumInputSize(paths)
+        : getFileSize(primaryInput))
+    const prepared: CompressTask = {
+      ...task,
+      inputPath: primaryInput,
+      inputPaths: paths.length > 1 ? paths : task.inputPaths,
+      outputPath,
+      status: 'queued',
+      progress: 0,
+      inputSize
+    }
     const item: QueueItem = {
-      task: {
-        ...task,
-        outputPath,
-        status: 'queued',
-        progress: 0,
-        inputSize
-      },
+      task: prepared,
       signal: { cancelled: false }
     }
     this.queue.push(item)
     this.send(IpcChannels.TASK_QUEUED, task.id)
+    Array.from(this.listeners).forEach((l) => {
+      try {
+        l.onQueued?.(task.id, prepared)
+      } catch (err) {
+        console.warn('[taskQueue] onQueued listener error:', err)
+      }
+    })
     void this.pump()
+  }
+
+  /**
+   * 向渲染进程推送完整任务（局域网上传入队时，桌面 UI 同步列表）
+   */
+  notifyTaskAdded(task: CompressTask): void {
+    this.send(IpcChannels.TASK_ADDED, task)
   }
 
   enqueueMany(tasks: CompressTask[]): void {
@@ -200,6 +278,24 @@ export class TaskQueue {
     if (this.win && !this.win.isDestroyed()) {
       this.win.webContents.send(channel, payload)
     }
+    // 同步外部监听（局域网服务等）
+    if (channel === IpcChannels.TASK_PROGRESS) {
+      Array.from(this.listeners).forEach((l) => {
+        try {
+          l.onProgress?.(payload as ProgressPayload)
+        } catch (err) {
+          console.warn('[taskQueue] onProgress listener error:', err)
+        }
+      })
+    } else if (channel === IpcChannels.TASK_END) {
+      Array.from(this.listeners).forEach((l) => {
+        try {
+          l.onEnd?.(payload as TaskEndPayload)
+        } catch (err) {
+          console.warn('[taskQueue] onEnd listener error:', err)
+        }
+      })
+    }
   }
 
   private async pump(): Promise<void> {
@@ -218,6 +314,146 @@ export class TaskQueue {
     }
   }
 
+  private emitResult(
+    task: CompressTask,
+    result: {
+      code: number
+      error?: string
+      inputSize?: number
+      outputSize?: number
+      resolvedEncoder?: string
+      fallbackNote?: string
+      commandLine?: string
+    },
+    signal: { cancelled: boolean }
+  ): void {
+    if (result.code === -1 || signal.cancelled) {
+      this.batchCancelled += 1
+      this.send(IpcChannels.TASK_END, {
+        taskId: task.id,
+        status: 'cancelled',
+        error: '已取消',
+        inputSize: result.inputSize ?? task.inputSize,
+        resolvedEncoder: result.resolvedEncoder,
+        fallbackNote: result.fallbackNote,
+        commandLine: result.commandLine
+      } satisfies TaskEndPayload)
+    } else if (result.code === 0) {
+      this.batchCompleted += 1
+      this.lastCompletedOutput = task.outputPath
+      this.lastCompletedName =
+        task.fileName || path.basename(task.inputPath)
+      this.send(IpcChannels.TASK_END, {
+        taskId: task.id,
+        status: 'completed',
+        outputPath: task.outputPath,
+        inputSize: result.inputSize ?? task.inputSize,
+        outputSize: result.outputSize,
+        resolvedEncoder: result.resolvedEncoder,
+        fallbackNote: result.fallbackNote,
+        commandLine: result.commandLine
+      } satisfies TaskEndPayload)
+    } else {
+      this.batchFailed += 1
+      this.lastFailedError = result.error || '处理失败'
+      this.send(IpcChannels.TASK_END, {
+        taskId: task.id,
+        status: 'failed',
+        error: result.error || '压缩失败',
+        inputSize: result.inputSize ?? task.inputSize,
+        resolvedEncoder: result.resolvedEncoder,
+        fallbackNote: result.fallbackNote,
+        commandLine: result.commandLine
+      } satisfies TaskEndPayload)
+    }
+  }
+
+  private async runImageTask(
+    task: CompressTask,
+    paths: string[],
+    onProgress: (payload: ProgressPayload) => void,
+    signal: { cancelled: boolean }
+  ): Promise<void> {
+    const mode = task.options?.mode
+    if (mode === 'image-stitch' && paths.length < 2) {
+      this.emitResult(
+        task,
+        { code: 1, error: '图片拼接至少需要 2 张图片', inputSize: task.inputSize },
+        signal
+      )
+      return
+    }
+
+    if (signal.cancelled) {
+      this.emitResult(task, { code: -1, error: '已取消', inputSize: task.inputSize }, signal)
+      return
+    }
+
+    onProgress({ taskId: task.id, percent: 5 })
+
+    const imgOpts = task.options.image || {}
+    const processOpts: ImageProcessOptions = {
+      inputPath: paths[0],
+      outputPath: task.outputPath,
+      maxEdge: imgOpts.maxEdge ?? task.options.maxEdge,
+      format: imgOpts.format || 'jpeg',
+      quality: imgOpts.quality ?? 80,
+      strip: imgOpts.strip !== false,
+      crop:
+        imgOpts.crop ||
+        (mode === 'image-crop' ? task.options.crop : undefined) ||
+        task.options.crop,
+      inputs: mode === 'image-stitch' ? paths : undefined,
+      layout: imgOpts.layout,
+      gridCols: imgOpts.gridCols,
+      gap: imgOpts.gap,
+      background: imgOpts.background
+    }
+
+    const r = await processImage(processOpts)
+
+    if (signal.cancelled) {
+      this.emitResult(
+        task,
+        { code: -1, error: '已取消', inputSize: task.inputSize },
+        signal
+      )
+      return
+    }
+
+    if (r.ok) {
+      onProgress({ taskId: task.id, percent: 100 })
+      const outPath = r.outputPath || task.outputPath
+      // 若引擎改写了扩展名，更新 task.outputPath 以便 UI 打开正确文件
+      if (outPath && outPath !== task.outputPath) {
+        task.outputPath = outPath
+      }
+      this.emitResult(
+        task,
+        {
+          code: 0,
+          inputSize: task.inputSize,
+          outputSize: r.size,
+          resolvedEncoder: r.engine,
+          commandLine: r.commandLine
+        },
+        signal
+      )
+    } else {
+      this.emitResult(
+        task,
+        {
+          code: 1,
+          error: r.error || '图片处理失败',
+          inputSize: task.inputSize,
+          resolvedEncoder: r.engine,
+          commandLine: r.commandLine
+        },
+        signal
+      )
+    }
+  }
+
   private async runItem(item: QueueItem): Promise<void> {
     const { task, signal } = item
 
@@ -226,8 +462,42 @@ export class TaskQueue {
     }
 
     try {
-      const isAudio = task.options?.mode === 'audio'
-      // 音频模式不探测硬件
+      const mode = task.options?.mode
+      const paths = this.resolveInputPaths(task)
+
+      if (isImageMode(mode)) {
+        await this.runImageTask(task, paths, onProgress, signal)
+        return
+      }
+
+      if (mode === 'video-concat') {
+        const result = await runVideoConcat({
+          taskId: task.id,
+          inputPaths: paths,
+          outputPath: task.outputPath,
+          options: task.options,
+          onProgress,
+          signal
+        })
+        this.emitResult(task, result, signal)
+        return
+      }
+
+      if (mode === 'media-compose') {
+        const result = await runMediaCompose({
+          taskId: task.id,
+          inputPath: task.inputPath,
+          outputPath: task.outputPath,
+          options: task.options,
+          onProgress,
+          signal
+        })
+        this.emitResult(task, result, signal)
+        return
+      }
+
+      // 现有 compress / audio（crop 已在 buildVideoFilter 中）
+      const isAudio = mode === 'audio'
       let detect = null
       if (!isAudio) {
         try {
@@ -247,45 +517,7 @@ export class TaskQueue {
         detect
       })
 
-      if (result.code === -1 || signal.cancelled) {
-        this.batchCancelled += 1
-        this.send(IpcChannels.TASK_END, {
-          taskId: task.id,
-          status: 'cancelled',
-          error: '已取消',
-          inputSize: result.inputSize ?? task.inputSize,
-          resolvedEncoder: result.resolvedEncoder,
-          fallbackNote: result.fallbackNote,
-          commandLine: result.commandLine
-        } satisfies TaskEndPayload)
-      } else if (result.code === 0) {
-        this.batchCompleted += 1
-        this.lastCompletedOutput = task.outputPath
-        this.lastCompletedName =
-          task.fileName || path.basename(task.inputPath)
-        this.send(IpcChannels.TASK_END, {
-          taskId: task.id,
-          status: 'completed',
-          outputPath: task.outputPath,
-          inputSize: result.inputSize ?? task.inputSize,
-          outputSize: result.outputSize,
-          resolvedEncoder: result.resolvedEncoder,
-          fallbackNote: result.fallbackNote,
-          commandLine: result.commandLine
-        } satisfies TaskEndPayload)
-      } else {
-        this.batchFailed += 1
-        this.lastFailedError = result.error || '处理失败'
-        this.send(IpcChannels.TASK_END, {
-          taskId: task.id,
-          status: 'failed',
-          error: result.error || '压缩失败',
-          inputSize: result.inputSize ?? task.inputSize,
-          resolvedEncoder: result.resolvedEncoder,
-          fallbackNote: result.fallbackNote,
-          commandLine: result.commandLine
-        } satisfies TaskEndPayload)
-      }
+      this.emitResult(task, result, signal)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.batchFailed += 1

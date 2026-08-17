@@ -20,6 +20,17 @@ export async function processWithMagick(
     }
   }
 
+  const stitchInputs = (options.inputs || [])
+    .map((p) => (p || '').trim())
+    .filter(Boolean)
+  if (stitchInputs.length >= 2) {
+    return {
+      ok: false,
+      engine: 'imagemagick',
+      error: '拼接请使用 Sharp 引擎'
+    }
+  }
+
   const inputPath = (options.inputPath || '').trim()
   const outputPath = (options.outputPath || '').trim()
   if (!inputPath || !outputPath) {

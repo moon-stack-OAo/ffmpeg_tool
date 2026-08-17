@@ -55,6 +55,20 @@ export function getImageEngineStatus(): ImageEngineStatus {
 export async function processImage(
   options: ImageProcessOptions
 ): Promise<ImageProcessResult> {
+  const stitchCount = (options.inputs || []).filter((p) => (p || '').trim())
+    .length
+  // 多图拼接仅 Sharp 支持
+  if (stitchCount >= 2) {
+    if (checkSharpReady()) {
+      return processWithSharp(options)
+    }
+    return {
+      ok: false,
+      engine: 'sharp',
+      error: '拼接请使用 Sharp 引擎（当前 Sharp 不可用）'
+    }
+  }
+
   const engine = currentEngine
   if (engine === 'imagemagick') {
     const magick = checkMagickAvailable()
@@ -94,3 +108,5 @@ export async function processImage(
 }
 
 export { checkSharpReady, checkMagickAvailable, setMagickOverride }
+export { getImageInfo, getImageDataUrl } from './preview'
+export type { ImageInfoResult, ImageDataUrlResult } from './preview'

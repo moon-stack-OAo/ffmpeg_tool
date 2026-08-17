@@ -4,19 +4,28 @@ import {
   buildAudioExtractArgs,
   buildCompressArgs,
   buildCompressArgsPass,
+  buildConcatDemuxerList,
+  buildConcatFilterComplex,
+  buildCropFilter,
   buildOutputPath,
+  buildScaleFilter,
+  buildScalePadFilter,
   buildSeekArgs,
+  buildVideoFilter,
   buildWatermarkOverlayExpr,
   effectiveDuration,
   escapeDrawtext,
   escapeFilterPath,
   estimateEtaSec,
   estimateVideoBitrateKbps,
+  isImageMode,
   nullOutputPath,
   parseProgressLine,
   parseSpeedMultiplier,
   planVideoFilters,
   resolveAudioEncoder,
+  resolveOutputSize,
+  resolveScaleMode,
   resolveVideoEncoder,
   shouldUseTwoPass,
   suggestUniqueOutputPath,
@@ -87,6 +96,37 @@ describe('buildCompressArgs', () => {
     expect(args).toContain('balanced')
   })
 
+  it('hevc_nvenc 关键参数 + mp4 hvc1', () => {
+    const args = buildCompressArgs(baseOptions({ crf: 28 }), 'hevc_nvenc')
+    expect(args).toContain('hevc_nvenc')
+    expect(args).toContain('-preset')
+    expect(args).toContain('p4')
+    expect(args).toContain('-cq')
+    expect(args).toContain('28')
+    expect(args).toContain('-tag:v')
+    expect(args).toContain('hvc1')
+  })
+
+  it('libx265 关键参数 + hvc1', () => {
+    const args = buildCompressArgs(baseOptions({ crf: 26 }), 'libx265')
+    expect(args).toContain('libx265')
+    expect(args).toContain('-crf')
+    expect(args).toContain('26')
+    expect(args).toContain('-pix_fmt')
+    expect(args).toContain('yuv420p')
+    expect(args).toContain('-tag:v')
+    expect(args).toContain('hvc1')
+  })
+
+  it('h264_mf 基本参数', () => {
+    const args = buildCompressArgs(baseOptions({ crf: 23 }), 'h264_mf')
+    expect(args).toContain('h264_mf')
+    expect(args).toContain('-rate_control')
+    expect(args).toContain('quality')
+    expect(args).toContain('-quality')
+    expect(args).toContain('23')
+  })
+
   it('vp9 / webm 关键参数', () => {
     const args = buildCompressArgs(
       baseOptions({ format: 'webm', crf: 30 }),
@@ -141,6 +181,32 @@ describe('buildCompressArgs', () => {
     expect(vfIdx).toBeGreaterThanOrEqual(0)
     expect(args[vfIdx + 1]).toBe(
       "transpose=1,scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease"
+    )
+  })
+
+  it('crop：-vf 含 crop=w:h:x:y', () => {
+    const args = buildCompressArgs(
+      baseOptions({ crop: { x: 10, y: 20, w: 100, h: 80 } }),
+      'libx264'
+    )
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe('crop=100:80:10:20')
+  })
+
+  it('rotate → crop → scale 顺序', () => {
+    const args = buildCompressArgs(
+      baseOptions({
+        rotate90: 'cw',
+        crop: { x: 0, y: 0, w: 200, h: 100 },
+        maxEdge: 1280
+      }),
+      'libx264'
+    )
+    const vfIdx = args.indexOf('-vf')
+    expect(vfIdx).toBeGreaterThanOrEqual(0)
+    expect(args[vfIdx + 1]).toBe(
+      "transpose=1,crop=200:100:0:0,scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease"
     )
   })
 
@@ -531,13 +597,15 @@ describe('watermark helpers', () => {
 })
 
 describe('supportsTwoPass / shouldUseTwoPass', () => {
-  it('supportsTwoPass 仅 x264/vp9', () => {
+  it('supportsTwoPass 含 x264/x265/vp9', () => {
     expect(supportsTwoPass('libx264')).toBe(true)
+    expect(supportsTwoPass('libx265')).toBe(true)
     expect(supportsTwoPass('libvpx-vp9')).toBe(true)
     expect(supportsTwoPass('h264_nvenc')).toBe(false)
     expect(supportsTwoPass('h264_qsv')).toBe(false)
     expect(supportsTwoPass('h264_amf')).toBe(false)
     expect(supportsTwoPass('h264_videotoolbox')).toBe(false)
+    expect(supportsTwoPass('hevc_nvenc')).toBe(false)
   })
 
   it('shouldUseTwoPass：目标体积 + 默认 twoPass + 软件', () => {
@@ -684,6 +752,56 @@ describe('resolveVideoEncoder', () => {
     )
     expect(r.encoder).toBe('h264_videotoolbox')
   })
+
+  it('旧别名 nvenc → h264_nvenc', () => {
+    const r = resolveVideoEncoder(baseOptions({ encoder: 'nvenc' }), detectAll)
+    expect(r.encoder).toBe('h264_nvenc')
+  })
+
+  it('显式 hevc_nvenc', () => {
+    const detect: EncoderDetectResult = {
+      ...detectAll,
+      codecs: {
+        h264_nvenc: true,
+        hevc_nvenc: true,
+        libx264: true
+      }
+    }
+    const r = resolveVideoEncoder(
+      baseOptions({ encoder: 'hevc_nvenc' }),
+      detect
+    )
+    expect(r.encoder).toBe('hevc_nvenc')
+  })
+
+  it('libx265', () => {
+    const r = resolveVideoEncoder(
+      baseOptions({ encoder: 'libx265' }),
+      { ...detectAll, codecs: { libx265: true, libx264: true } }
+    )
+    expect(r.encoder).toBe('libx265')
+  })
+
+  it('libx264 显式', () => {
+    const r = resolveVideoEncoder(baseOptions({ encoder: 'libx264' }), detectAll)
+    expect(r.encoder).toBe('libx264')
+  })
+
+  it('auto 不默认 HEVC', () => {
+    const r = resolveVideoEncoder(
+      baseOptions({ encoder: 'auto' }),
+      {
+        nvenc: false,
+        qsv: false,
+        amf: false,
+        videotoolbox: false,
+        preferred: 'libx264',
+        codecs: { hevc_nvenc: true, libx264: true }
+      },
+      'win32'
+    )
+    expect(r.encoder).toBe('libx264')
+  })
 })
 
 describe('parseProgressLine', () => {
@@ -715,6 +833,192 @@ describe('formatFileSize / formatSaveRatio', () => {
     expect(formatSaveRatio(1000, 350)).toBe('-65.0%')
     expect(formatSaveRatio(1000, 1200)).toBe('+20.0%')
     expect(formatSaveRatio(0, 100)).toBeNull()
+  })
+})
+
+describe('resolveScaleMode / resolveOutputSize / buildScalePadFilter', () => {
+  it('兼容：仅 maxEdge>0 → maxEdge；否则 none', () => {
+    expect(resolveScaleMode(baseOptions({ maxEdge: 1280 }))).toBe('maxEdge')
+    expect(resolveScaleMode(baseOptions({ maxEdge: 0 }))).toBe('none')
+    expect(
+      resolveScaleMode(baseOptions({ scaleMode: 'fixed', maxEdge: 0 }))
+    ).toBe('fixed')
+  })
+
+  it('resolveOutputSize fixed', () => {
+    expect(
+      resolveOutputSize(
+        baseOptions({
+          scaleMode: 'fixed',
+          outWidth: 1920,
+          outHeight: 1080
+        })
+      )
+    ).toEqual({ w: 1920, h: 1080 })
+    expect(
+      resolveOutputSize(baseOptions({ scaleMode: 'fixed', outWidth: 0 }))
+    ).toBeNull()
+  })
+
+  it('resolveOutputSize aspect：outWidth 优先；maxEdge 作长边', () => {
+    expect(
+      resolveOutputSize(
+        baseOptions({
+          scaleMode: 'aspect',
+          aspectRatio: '16:9',
+          outWidth: 1920
+        })
+      )
+    ).toEqual({ w: 1920, h: 1080 })
+    expect(
+      resolveOutputSize(
+        baseOptions({
+          scaleMode: 'aspect',
+          aspectRatio: '16:9',
+          maxEdge: 1920
+        })
+      )
+    ).toEqual({ w: 1920, h: 1080 })
+    expect(
+      resolveOutputSize(
+        baseOptions({
+          scaleMode: 'aspect',
+          aspectRatio: '9:16',
+          maxEdge: 1920
+        })
+      )
+    ).toEqual({ w: 1080, h: 1920 })
+    expect(
+      resolveOutputSize(
+        baseOptions({
+          scaleMode: 'aspect',
+          aspectRatio: '1:1',
+          outWidth: 800
+        })
+      )
+    ).toEqual({ w: 800, h: 800 })
+  })
+
+  it('buildScaleFilter maxEdge 兼容', () => {
+    expect(buildScaleFilter(1280)).toBe(
+      "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease"
+    )
+    expect(buildScaleFilter(0)).toBeNull()
+  })
+
+  it('buildScalePadFilter maxEdge', () => {
+    expect(buildScalePadFilter(baseOptions({ maxEdge: 1280 }))).toBe(
+      "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease"
+    )
+    expect(buildScalePadFilter(baseOptions({ scaleMode: 'none' }))).toBeNull()
+  })
+
+  it('buildScalePadFilter fixed + black pad', () => {
+    expect(
+      buildScalePadFilter(
+        baseOptions({
+          scaleMode: 'fixed',
+          outWidth: 1920,
+          outHeight: 1080,
+          scalePad: 'black'
+        })
+      )
+    ).toBe(
+      'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black'
+    )
+  })
+
+  it('buildScalePadFilter fixed + none（仅缩入）', () => {
+    expect(
+      buildScalePadFilter(
+        baseOptions({
+          scaleMode: 'fixed',
+          outWidth: 1280,
+          outHeight: 720,
+          scalePad: 'none'
+        })
+      )
+    ).toBe('scale=1280:720:force_original_aspect_ratio=decrease')
+  })
+
+  it('buildScalePadFilter aspect 默认 black pad', () => {
+    expect(
+      buildScalePadFilter(
+        baseOptions({
+          scaleMode: 'aspect',
+          aspectRatio: '16:9',
+          outWidth: 1920
+        })
+      )
+    ).toBe(
+      'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black'
+    )
+  })
+
+  it('buildVideoFilter 含 fixed scale+pad', () => {
+    expect(
+      buildVideoFilter(
+        baseOptions({
+          scaleMode: 'fixed',
+          outWidth: 640,
+          outHeight: 360,
+          scalePad: 'black',
+          fps: '30'
+        })
+      )
+    ).toBe(
+      'scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black,fps=30'
+    )
+  })
+})
+
+describe('buildCropFilter / buildVideoFilter / concat', () => {
+  it('buildCropFilter 有效与无效', () => {
+    expect(buildCropFilter({ x: 1, y: 2, w: 3, h: 4 })).toBe('crop=3:4:1:2')
+    expect(buildCropFilter({ x: 1.6, y: 2.4, w: 3.1, h: 4.9 })).toBe(
+      'crop=3:5:2:2'
+    )
+    expect(buildCropFilter(null)).toBeNull()
+    expect(buildCropFilter({ x: -1, y: 0, w: 10, h: 10 })).toBeNull()
+    expect(buildCropFilter({ x: 0, y: 0, w: 0, h: 10 })).toBeNull()
+  })
+
+  it('buildVideoFilter 含 crop', () => {
+    expect(
+      buildVideoFilter(
+        baseOptions({ crop: { x: 0, y: 0, w: 100, h: 50 }, fps: '30' })
+      )
+    ).toBe('crop=100:50:0:0,fps=30')
+  })
+
+  it('buildConcatDemuxerList 路径转义', () => {
+    const text = buildConcatDemuxerList([
+      "D:\\a\\b.mp4",
+      "C:\\it's\\clip.mp4"
+    ])
+    expect(text).toBe(
+      "file 'D:\\a\\b.mp4'\nfile 'C:\\it'\\''s\\clip.mp4'"
+    )
+  })
+
+  it('buildConcatFilterComplex 有/无音频', () => {
+    expect(buildConcatFilterComplex(2, true)).toBe(
+      '[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]'
+    )
+    expect(buildConcatFilterComplex(2, false)).toBe(
+      '[0:v][1:v]concat=n=2:v=1:a=0[outv]'
+    )
+    expect(buildConcatFilterComplex(3, false)).toBe(
+      '[0:v][1:v][2:v]concat=n=3:v=1:a=0[outv]'
+    )
+  })
+
+  it('isImageMode', () => {
+    expect(isImageMode('image')).toBe(true)
+    expect(isImageMode('image-crop')).toBe(true)
+    expect(isImageMode('image-stitch')).toBe(true)
+    expect(isImageMode('compress')).toBe(false)
+    expect(isImageMode('video-concat')).toBe(false)
   })
 })
 
@@ -863,6 +1167,67 @@ describe('buildOutputPath / suggestUniqueOutputPath', () => {
       fixed
     )
     expect(path.dirname(out)).toBe(path.join('D:', 'out', '20260810'))
+  })
+
+  it('mode=image 默认模板 _img，format=jpeg → .jpg', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'photo.png'),
+      baseOptions({
+        mode: 'image',
+        image: { format: 'jpeg' },
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('photo_img.jpg')
+  })
+
+  it('mode=image format=keep 保留输入扩展名', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'photo.webp'),
+      baseOptions({
+        mode: 'image',
+        image: { format: 'keep' },
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('photo_img.webp')
+  })
+
+  it('mode=image-crop 与 image 同模板', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'pics', 'a.jpeg'),
+      baseOptions({
+        mode: 'image-crop',
+        image: { format: 'keep' },
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('a_img.jpg')
+  })
+
+  it('mode=media-compose 默认模板 _compose', () => {
+    const p = buildOutputPath('D:\\v\\main.mp4', {
+      presetId: 'standard',
+      crf: 23,
+      maxEdge: 0,
+      format: 'mp4',
+      outputDir: 'D:\\out',
+      encoder: 'auto',
+      mode: 'media-compose'
+    })
+    expect(p.replace(/\\/g, '/')).toMatch(/main_compose\.mp4$/)
+  })
+
+  it('mode=video-concat 默认模板 _concat', () => {
+    const out = buildOutputPath(
+      path.join('D:', 'videos', 'part1.mp4'),
+      baseOptions({
+        mode: 'video-concat',
+        format: 'mp4',
+        outputDir: path.join('D:', 'out')
+      })
+    )
+    expect(path.basename(out)).toBe('part1_concat.mp4')
   })
 })
 

@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { type CompressTask, formatFileSize } from '@shared/types'
 import {
   formatEta,
+  modeLabel as modeLabelText,
   optionsSummary,
   sizeCompareClass,
   sizeCompareText,
@@ -31,7 +32,18 @@ const emit = defineEmits<{
 
 /** 任务模式简写 */
 function modeLabel(task: CompressTask): string {
-  return task.options?.mode === 'audio' ? '音频' : '压缩'
+  return modeLabelText(task.options?.mode)
+}
+
+function modeTagType(
+  task: CompressTask
+): '' | 'success' | 'warning' | 'info' | 'danger' {
+  const m = task.options?.mode
+  if (m === 'audio') return 'warning'
+  if (m === 'image' || m === 'image-crop' || m === 'image-stitch') return 'success'
+  if (m === 'video-concat') return 'danger'
+  if (m === 'media-compose') return 'warning'
+  return 'info'
 }
 
 const detailVisible = ref(false)
@@ -92,12 +104,12 @@ function onActionCommand(cmd: string, row: CompressTask): void {
     </div>
 
     <div class="task-table-body">
-    <el-table :data="tasks" empty-text="暂无任务，请添加视频" height="100%" stripe>
+    <el-table :data="tasks" empty-text="暂无任务，请添加文件" height="100%" stripe>
       <el-table-column label="文件名" min-width="150" prop="fileName" show-overflow-tooltip />
       <el-table-column label="模式" width="64">
         <template #default="{ row }">
           <el-tag
-            :type="row.options?.mode === 'audio' ? 'warning' : 'info'"
+            :type="modeTagType(row)"
             effect="plain"
             size="small"
           >

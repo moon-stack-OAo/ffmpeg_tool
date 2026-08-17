@@ -1,9 +1,17 @@
 import fs from 'fs'
 import path from 'path'
-import { VIDEO_EXTENSIONS } from '../../shared/types'
+import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from '../../shared/types'
 
 const VIDEO_EXT_SET = new Set(
   (VIDEO_EXTENSIONS as string[]).map((e) => e.toLowerCase())
+)
+const IMAGE_EXT_SET = new Set(
+  (IMAGE_EXTENSIONS as string[]).map((e) => e.toLowerCase())
+)
+const MEDIA_EXT_SET = new Set(
+  (VIDEO_EXTENSIONS as string[])
+    .concat(IMAGE_EXTENSIONS as string[])
+    .map((e) => e.toLowerCase())
 )
 
 function isVideoExt(filePath: string): boolean {
@@ -11,15 +19,21 @@ function isVideoExt(filePath: string): boolean {
   return VIDEO_EXT_SET.has(ext)
 }
 
+function isMediaExt(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return MEDIA_EXT_SET.has(ext)
+}
+
 /**
- * 从路径列表收集视频文件（支持目录递归）
- * - 文件且视频扩展名 → 加入
+ * 从路径列表收集媒体文件（支持目录递归）
+ * - 文件且匹配扩展名 → 加入
  * - 目录 → 递归（深度限制 8）
  * - 最多 maxFiles 个（默认 500）
  */
-export function collectVideoFiles(
+function collectFiles(
   paths: string[],
-  maxFiles = 500
+  maxFiles: number,
+  accept: (filePath: string) => boolean
 ): Array<{ path: string; name: string }> {
   const result: Array<{ path: string; name: string }> = []
   const seen = new Set<string>()
@@ -29,7 +43,7 @@ export function collectVideoFiles(
     if (result.length >= maxFiles) return
     const normalized = path.normalize(filePath)
     if (seen.has(normalized)) return
-    if (!isVideoExt(normalized)) return
+    if (!accept(normalized)) return
     try {
       if (!fs.existsSync(normalized) || !fs.statSync(normalized).isFile()) return
     } catch {
@@ -58,7 +72,6 @@ export function collectVideoFiles(
         } else if (ent.isFile()) {
           pushFile(full)
         } else if (ent.isSymbolicLink()) {
-          // 可选：跟随符号链接到文件
           try {
             const st = fs.statSync(full)
             if (st.isFile()) pushFile(full)
@@ -91,4 +104,24 @@ export function collectVideoFiles(
   }
 
   return result
+}
+
+/**
+ * 从路径列表收集视频文件（支持目录递归）
+ */
+export function collectVideoFiles(
+  paths: string[],
+  maxFiles = 500
+): Array<{ path: string; name: string }> {
+  return collectFiles(paths, maxFiles, isVideoExt)
+}
+
+/**
+ * 从路径列表收集视频+图片（拖拽时由前端再按 mode 过滤）
+ */
+export function collectMediaFiles(
+  paths: string[],
+  maxFiles = 500
+): Array<{ path: string; name: string }> {
+  return collectFiles(paths, maxFiles, isMediaExt)
 }

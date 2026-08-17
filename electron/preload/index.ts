@@ -4,6 +4,7 @@ import type {
   CompressTask,
   ElectronAPI,
   ImageProcessOptions,
+  LanRemoteConfigInput,
   ProgressPayload,
   TaskEndPayload,
   TrayCommand,
@@ -238,6 +239,18 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IpcChannels.IMAGE_PROCESS, options),
   setMagickPath: (path: string) =>
     ipcRenderer.invoke(IpcChannels.IMAGE_SET_MAGICK_PATH, path),
+  getImageInfo: (path: string) =>
+    ipcRenderer.invoke(IpcChannels.IMAGE_GET_INFO, path),
+  getImageDataUrl: (path: string, maxEdge?: number) =>
+    ipcRenderer.invoke(IpcChannels.IMAGE_GET_DATA_URL, path, maxEdge),
+  extractVideoFrame: (opts: {
+    path: string
+    timeSec?: number
+    maxEdge?: number
+  }) => ipcRenderer.invoke(IpcChannels.VIDEO_EXTRACT_FRAME, opts),
+  getLanStatus: () => ipcRenderer.invoke(IpcChannels.LAN_GET_STATUS),
+  setLanRemoteConfig: (config: LanRemoteConfigInput) =>
+    ipcRenderer.invoke(IpcChannels.LAN_SET_CONFIG, config),
   clearStoredTasks: () => ipcRenderer.invoke(IpcChannels.TASKS_CLEAR),
   resetSettings: () => ipcRenderer.invoke(IpcChannels.SETTINGS_RESET),
   getAppInfo: () => ipcRenderer.invoke(IpcChannels.APP_INFO),
@@ -302,6 +315,18 @@ const api: ElectronAPI = {
     ipcRenderer.on(IpcChannels.TASK_QUEUED, handler)
     return () => {
       ipcRenderer.removeListener(IpcChannels.TASK_QUEUED, handler)
+    }
+  },
+
+  onTaskAdded: (callback) => {
+    const handler = (_event: IpcRendererEvent, task: CompressTask): void => {
+      if (task && typeof task.id === 'string') {
+        callback(task)
+      }
+    }
+    ipcRenderer.on(IpcChannels.TASK_ADDED, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.TASK_ADDED, handler)
     }
   },
 

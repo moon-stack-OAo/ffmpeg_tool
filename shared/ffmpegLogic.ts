@@ -1,5 +1,6 @@
 import path from 'path'
 import type {
+  AspectRatioId,
   CompressOptions,
   EncodePreset,
   EncoderDetectResult,
@@ -7,12 +8,17 @@ import type {
   OutputFormat,
   ProgressPayload,
   ResolvedEncoder,
+  ScaleMode,
+  ScalePadMode,
   WatermarkOptions,
   WatermarkPosition
 } from './types'
 import {
   DEFAULT_AUDIO_BITRATE,
   DEFAULT_AUDIO_NAME_TEMPLATE,
+  DEFAULT_COMPOSE_NAME_TEMPLATE,
+  DEFAULT_CONCAT_NAME_TEMPLATE,
+  DEFAULT_IMAGE_NAME_TEMPLATE,
   DEFAULT_NAME_TEMPLATE,
   DEFAULT_VIDEO_AUDIO_BITRATE
 } from './types'
@@ -23,8 +29,71 @@ const H264_ENCODERS: ReadonlyArray<ResolvedEncoder> = [
   'h264_nvenc',
   'h264_qsv',
   'h264_amf',
-  'h264_videotoolbox'
+  'h264_videotoolbox',
+  'h264_mf'
 ]
+
+/** HEVC 系列（mp4 可加 hvc1 tag） */
+const HEVC_ENCODERS: ReadonlyArray<ResolvedEncoder> = [
+  'libx265',
+  'hevc_nvenc',
+  'hevc_qsv',
+  'hevc_amf',
+  'hevc_videotoolbox',
+  'hevc_mf'
+]
+
+/** 硬件编码器列表 */
+export const HARDWARE_ENCODERS: ReadonlyArray<ResolvedEncoder> = [
+  'h264_nvenc',
+  'h264_qsv',
+  'h264_amf',
+  'h264_videotoolbox',
+  'h264_mf',
+  'hevc_nvenc',
+  'hevc_qsv',
+  'hevc_amf',
+  'hevc_videotoolbox',
+  'hevc_mf'
+]
+
+/** 是否为硬件编码器 */
+export function isHardwareEncoder(enc: string): boolean {
+  return (HARDWARE_ENCODERS as readonly string[]).includes(enc)
+}
+
+/** 旧 EncoderId 别名 → 显式 codec */
+const LEGACY_ENCODER_ALIAS: Partial<Record<EncoderId, ResolvedEncoder>> = {
+  nvenc: 'h264_nvenc',
+  qsv: 'h264_qsv',
+  amf: 'h264_amf',
+  videotoolbox: 'h264_videotoolbox',
+  software: 'libx264'
+}
+
+/** 从 detect 判断某 ResolvedEncoder 是否可用 */
+export function isEncoderAvailable(
+  detect: EncoderDetectResult | null | undefined,
+  codec: ResolvedEncoder
+): boolean | undefined {
+  if (!detect) return undefined
+  if (detect.codecs && codec in detect.codecs) {
+    return !!detect.codecs[codec]
+  }
+  // 兼容仅旧布尔字段
+  if (codec === 'h264_nvenc') return detect.nvenc
+  if (codec === 'h264_qsv') return detect.qsv
+  if (codec === 'h264_amf') return detect.amf
+  if (codec === 'h264_videotoolbox') return !!detect.videotoolbox
+  if (codec === 'libx264') return true
+  return undefined
+}
+
+function throwEncoderUnavailable(label: string): never {
+  throw new Error(
+    `本机未检测到可用的 ${label} 编码器，请改用「自动」或「关闭（仅 CPU）」`
+  )
+}
 
 /** 从 `128k` 解析 kbps；无效时回退 128 */
 export function parseAudioBitrateKbps(bitrate?: string): number {
@@ -247,7 +316,7 @@ export function effectiveDuration(
 
 /**
  * 解析最终视频编码器
- * webm 强制 libvpx-vp9；H.264 容器按 encoder 选项选择
+ * webm 强制 libvpx-vp9；其余按 encoder 选项选择
  * @param platform 可选 process.platform，影响 auto 优先级（darwin 优先 videotoolbox）
  */
 export function resolveVideoEncoder(
@@ -266,65 +335,190 @@ export function resolveVideoEncoder(
 
   const enc: EncoderId = options.encoder || 'auto'
 
-  if (enc === 'software') {
+  // 软件 / 显式 CPU
+  if (enc === 'software' || enc === 'libx264') {
     return { encoder: 'libx264' }
   }
-
-  if (enc === 'nvenc') {
-    if (detect && !detect.nvenc) {
-      throw new Error('本机未检测到可用的 NVIDIA NVENC 编码器，请改用「自动」或「软件 x264」')
+  if (enc === 'libx265') {
+    if (detect && isEncoderAvailable(detect, 'libx265') === false) {
+      throwEncoderUnavailable('libx265')
     }
-    return { encoder: 'h264_nvenc' }
+    return { encoder: 'libx265' }
   }
 
-  if (enc === 'qsv') {
-    if (detect && !detect.qsv) {
-      throw new Error('本机未检测到可用的 Intel QSV 编码器，请改用「自动」或「软件 x264」')
+  // 旧别名 → h264_*
+  const legacy = LEGACY_ENCODER_ALIAS[enc]
+  if (legacy && legacy !== 'libx264') {
+    if (detect && isEncoderAvailable(detect, legacy) === false) {
+      const labels: Record<string, string> = {
+        h264_nvenc: 'NVIDIA NVENC',
+        h264_qsv: 'Intel QSV',
+        h264_amf: 'AMD AMF',
+        h264_videotoolbox: 'Apple VideoToolbox'
+      }
+      throwEncoderUnavailable(labels[legacy] || legacy)
     }
-    return { encoder: 'h264_qsv' }
+    return { encoder: legacy }
   }
 
-  if (enc === 'amf') {
-    if (detect && !detect.amf) {
-      throw new Error('本机未检测到可用的 AMD AMF 编码器，请改用「自动」或「软件 x264」')
+  // 显式 h264_* / hevc_*
+  const explicitHw: ResolvedEncoder[] = [
+    'h264_nvenc',
+    'h264_qsv',
+    'h264_amf',
+    'h264_videotoolbox',
+    'h264_mf',
+    'hevc_nvenc',
+    'hevc_qsv',
+    'hevc_amf',
+    'hevc_videotoolbox',
+    'hevc_mf'
+  ]
+  if ((explicitHw as string[]).includes(enc)) {
+    const codec = enc as ResolvedEncoder
+    if (detect && isEncoderAvailable(detect, codec) === false) {
+      throwEncoderUnavailable(codec)
     }
-    return { encoder: 'h264_amf' }
+    return { encoder: codec }
   }
 
-  if (enc === 'videotoolbox') {
-    if (detect && !detect.videotoolbox) {
-      throw new Error(
-        '本机未检测到可用的 Apple VideoToolbox 编码器，请改用「自动」或「软件 x264」'
-      )
-    }
-    return { encoder: 'h264_videotoolbox' }
-  }
-
-  // auto：按平台优先硬件
+  // auto：优先 H.264 硬件（不默认 HEVC），再 libx264
+  // win/linux: nvenc > qsv > amf > mf > vt；darwin: vt > nvenc > qsv > amf > mf
   if (detect) {
-    const isDarwin = platform === 'darwin'
-    if (isDarwin) {
-      if (detect.videotoolbox) return { encoder: 'h264_videotoolbox' }
-      if (detect.nvenc) return { encoder: 'h264_nvenc' }
-      if (detect.qsv) return { encoder: 'h264_qsv' }
-      if (detect.amf) return { encoder: 'h264_amf' }
-    } else {
-      // win / linux：nvenc > qsv > amf > videotoolbox（极少）
-      if (detect.nvenc) return { encoder: 'h264_nvenc' }
-      if (detect.qsv) return { encoder: 'h264_qsv' }
-      if (detect.amf) return { encoder: 'h264_amf' }
-      if (detect.videotoolbox) return { encoder: 'h264_videotoolbox' }
+    const pick = (list: ResolvedEncoder[]): ResolvedEncoder | null => {
+      for (const c of list) {
+        if (isEncoderAvailable(detect, c)) return c
+      }
+      return null
     }
+    const isDarwin = platform === 'darwin'
+    const order: ResolvedEncoder[] = isDarwin
+      ? [
+          'h264_videotoolbox',
+          'h264_nvenc',
+          'h264_qsv',
+          'h264_amf',
+          'h264_mf'
+        ]
+      : [
+          'h264_nvenc',
+          'h264_qsv',
+          'h264_amf',
+          'h264_mf',
+          'h264_videotoolbox'
+        ]
+    const hw = pick(order)
+    if (hw) return { encoder: hw }
   }
   return { encoder: 'libx264' }
 }
 
-/** 构建缩放滤镜参数 */
+/** 构建缩放滤镜参数（最长边限制，保持兼容） */
 export function buildScaleFilter(maxEdge: number): string | null {
   if (!maxEdge || maxEdge <= 0) return null
   const n = maxEdge
   // 保持宽高比，且不放大
   return `scale='min(${n},iw)':'min(${n},ih)':force_original_aspect_ratio=decrease`
+}
+
+/** 解析有效缩放模式（兼容仅写 maxEdge 的旧任务） */
+export function resolveScaleMode(options: CompressOptions): ScaleMode {
+  if (
+    options.scaleMode === 'none' ||
+    options.scaleMode === 'maxEdge' ||
+    options.scaleMode === 'fixed' ||
+    options.scaleMode === 'aspect'
+  ) {
+    return options.scaleMode
+  }
+  if (typeof options.maxEdge === 'number' && options.maxEdge > 0) {
+    return 'maxEdge'
+  }
+  return 'none'
+}
+
+/** 解析宽高比数值；无效返回 null */
+export function parseAspectRatioId(
+  id?: AspectRatioId | string | null
+): { rw: number; rh: number } | null {
+  if (id === '16:9') return { rw: 16, rh: 9 }
+  if (id === '9:16') return { rw: 9, rh: 16 }
+  if (id === '1:1') return { rw: 1, rh: 1 }
+  if (id === '4:3') return { rw: 4, rh: 3 }
+  return null
+}
+
+/**
+ * 解析目标输出宽高；无法解析返回 null
+ * - fixed：outWidth × outHeight
+ * - aspect：按 aspectRatio + outWidth（优先）或 maxEdge 作长边
+ */
+export function resolveOutputSize(
+  options: CompressOptions
+): { w: number; h: number } | null {
+  const mode = resolveScaleMode(options)
+  if (mode === 'fixed') {
+    const w = Number(options.outWidth)
+    const h = Number(options.outHeight)
+    if (
+      !Number.isFinite(w) ||
+      !Number.isFinite(h) ||
+      w <= 0 ||
+      h <= 0
+    ) {
+      return null
+    }
+    return { w: Math.round(w), h: Math.round(h) }
+  }
+  if (mode === 'aspect') {
+    const ratio = parseAspectRatioId(options.aspectRatio)
+    if (!ratio) return null
+    const { rw, rh } = ratio
+    const outW = Number(options.outWidth)
+    if (Number.isFinite(outW) && outW > 0) {
+      const w = Math.round(outW)
+      const h = Math.max(1, Math.round((w * rh) / rw))
+      return { w, h }
+    }
+    const edge = Number(options.maxEdge)
+    if (Number.isFinite(edge) && edge > 0) {
+      const long = Math.round(edge)
+      // 长边 = max(w,h) = long
+      if (rw >= rh) {
+        const w = long
+        const h = Math.max(1, Math.round((w * rh) / rw))
+        return { w, h }
+      }
+      const h = long
+      const w = Math.max(1, Math.round((h * rw) / rh))
+      return { w, h }
+    }
+    return null
+  }
+  return null
+}
+
+/**
+ * 构建缩放(+可选 pad) 滤镜片段
+ * - maxEdge: 现有 scale min
+ * - fixed / aspect: scale=w:h:force_original_aspect_ratio=decrease，
+ *   scalePad=black 时再 pad 到精确画布
+ */
+export function buildScalePadFilter(options: CompressOptions): string | null {
+  const mode = resolveScaleMode(options)
+  if (mode === 'none') return null
+  if (mode === 'maxEdge') {
+    return buildScaleFilter(options.maxEdge)
+  }
+  const size = resolveOutputSize(options)
+  if (!size) return null
+  const { w, h } = size
+  const scale = `scale=${w}:${h}:force_original_aspect_ratio=decrease`
+  const padMode: ScalePadMode =
+    options.scalePad === 'none' ? 'none' : 'black'
+  if (padMode === 'none') return scale
+  // 居中黑边 pad 到精确目标画布
+  return `${scale},pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`
 }
 
 /**
@@ -343,13 +537,38 @@ export function buildRotateFilter(
 }
 
 /**
- * 组合基础视频滤镜：旋转 → 缩放 → 帧率（不含水印）
+ * 构建裁切滤镜 crop=w:h:x:y；无效返回 null
+ */
+export function buildCropFilter(
+  crop?: { x: number; y: number; w: number; h: number } | null
+): string | null {
+  if (crop == null || typeof crop !== 'object') return null
+  const x = Number(crop.x)
+  const y = Number(crop.y)
+  const w = Number(crop.w)
+  const h = Number(crop.h)
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(w) ||
+    !Number.isFinite(h)
+  ) {
+    return null
+  }
+  if (w <= 0 || h <= 0 || x < 0 || y < 0) return null
+  return `crop=${Math.round(w)}:${Math.round(h)}:${Math.round(x)}:${Math.round(y)}`
+}
+
+/**
+ * 组合基础视频滤镜：旋转 → 裁切 → 缩放/pad → 帧率（不含水印）
  */
 export function buildVideoFilter(options: CompressOptions): string | null {
   const parts: string[] = []
   const rotate = buildRotateFilter(options.rotate90)
   if (rotate) parts.push(rotate)
-  const scale = buildScaleFilter(options.maxEdge)
+  const crop = buildCropFilter(options.crop)
+  if (crop) parts.push(crop)
+  const scale = buildScalePadFilter(options)
   if (scale) parts.push(scale)
   const fps = options.fps
   if (fps === '24' || fps === '30' || fps === '60') {
@@ -357,6 +576,46 @@ export function buildVideoFilter(options: CompressOptions): string | null {
   }
   if (parts.length === 0) return null
   return parts.join(',')
+}
+
+/**
+ * 生成 concat demuxer list 文件内容
+ * 每行 file 'path'，路径内单引号转义为 '\''
+ */
+export function buildConcatDemuxerList(paths: string[]): string {
+  return paths
+    .map((p) => {
+      const escaped = String(p ?? '').replace(/'/g, "'\\''")
+      return `file '${escaped}'`
+    })
+    .join('\n')
+}
+
+/**
+ * 构建 filter_complex concat（重编码路径）的 filter 字符串
+ * 例 n=2 hasAudio: [0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]
+ * 无音频: [0:v][1:v]concat=n=2:v=1:a=0[outv]
+ */
+export function buildConcatFilterComplex(
+  count: number,
+  hasAudio: boolean
+): string {
+  const n = Math.max(0, Math.floor(count))
+  if (n <= 0) return ''
+  const labels: string[] = []
+  for (let i = 0; i < n; i++) {
+    labels.push(`[${i}:v]`)
+    if (hasAudio) labels.push(`[${i}:a]`)
+  }
+  if (hasAudio) {
+    return `${labels.join('')}concat=n=${n}:v=1:a=1[outv][outa]`
+  }
+  return `${labels.join('')}concat=n=${n}:v=1:a=0[outv]`
+}
+
+/** 是否为图片相关任务模式 */
+export function isImageMode(mode?: string | null): boolean {
+  return mode === 'image' || mode === 'image-crop' || mode === 'image-stitch'
 }
 
 /** drawtext 文本转义：\ : ' % */
@@ -556,9 +815,13 @@ export function planVideoFilters(
   }
 }
 
-/** 是否支持经典 -pass 1/2 两遍编码（仅软件 x264 / VP9） */
+/** 是否支持经典 -pass 1/2 两遍编码（软件 x264 / x265 / VP9） */
 export function supportsTwoPass(resolved: ResolvedEncoder): boolean {
-  return resolved === 'libx264' || resolved === 'libvpx-vp9'
+  return (
+    resolved === 'libx264' ||
+    resolved === 'libx265' ||
+    resolved === 'libvpx-vp9'
+  )
 }
 
 /**
@@ -608,6 +871,302 @@ export interface BuildCompressArgsCtx {
 }
 
 /**
+ * 仅构建视频编码器参数（-c:v 及质量/码率相关）
+ * 供 concat / compose 重编码复用，不含音频、滤镜、容器
+ */
+export function buildVideoEncoderArgs(
+  options: CompressOptions,
+  resolved: ResolvedEncoder,
+  ctx?: { durationSec?: number; notes?: string[] }
+): string[] {
+  const args: string[] = []
+  const format = options.format || 'mp4'
+  const quality = mapCrfToHardwareQuality(options.crf)
+  const durationSec =
+    ctx?.durationSec != null &&
+    Number.isFinite(ctx.durationSec) &&
+    ctx.durationSec > 0
+      ? ctx.durationSec
+      : 0
+  const targetMb =
+    typeof options.targetSizeMb === 'number' &&
+    Number.isFinite(options.targetSizeMb) &&
+    options.targetSizeMb > 0
+      ? options.targetSizeMb
+      : 0
+  const useAbr = targetMb > 0 && durationSec > 0
+  if (targetMb > 0 && durationSec <= 0) {
+    ctx?.notes?.push('目标体积已设但时长未知，已回退 CRF/质量模式')
+  }
+  const audioKbps =
+    options.muteAudio === true
+      ? 0
+      : parseAudioBitrateKbps(options.videoAudioBitrate)
+  const videoKbps = useAbr
+    ? estimateVideoBitrateKbps(targetMb, durationSec, audioKbps)
+    : 0
+  const bv = `${videoKbps}k`
+  const maxrate = bv
+  const bufsize = `${videoKbps * 2}k`
+
+  if (resolved === 'libvpx-vp9') {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        'libvpx-vp9',
+        '-b:v',
+        bv,
+        '-deadline',
+        'good',
+        '-cpu-used',
+        '4',
+        '-row-mt',
+        '1'
+      )
+    } else {
+      args.push(
+        '-c:v',
+        'libvpx-vp9',
+        '-b:v',
+        '0',
+        '-crf',
+        String(quality),
+        '-deadline',
+        'good',
+        '-cpu-used',
+        '4',
+        '-row-mt',
+        '1'
+      )
+    }
+    return args
+  }
+
+  if (resolved === 'libx264') {
+    const x264Preset = resolveEncodePreset(options)
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        'libx264',
+        '-preset',
+        x264Preset,
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize
+      )
+    } else {
+      args.push(
+        '-c:v',
+        'libx264',
+        '-preset',
+        x264Preset,
+        '-crf',
+        String(options.crf)
+      )
+    }
+  } else if (resolved === 'libx265') {
+    const x265Preset = resolveEncodePreset(options)
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        'libx265',
+        '-preset',
+        x265Preset,
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize,
+        '-pix_fmt',
+        'yuv420p'
+      )
+    } else {
+      args.push(
+        '-c:v',
+        'libx265',
+        '-preset',
+        x265Preset,
+        '-crf',
+        String(options.crf),
+        '-pix_fmt',
+        'yuv420p'
+      )
+    }
+  } else if (resolved === 'h264_nvenc' || resolved === 'hevc_nvenc') {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        resolved,
+        '-preset',
+        'p4',
+        '-rc',
+        'vbr',
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize
+      )
+    } else {
+      args.push(
+        '-c:v',
+        resolved,
+        '-preset',
+        'p4',
+        '-rc',
+        'vbr',
+        '-cq',
+        String(quality),
+        '-b:v',
+        '0'
+      )
+    }
+  } else if (resolved === 'h264_qsv' || resolved === 'hevc_qsv') {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        resolved,
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize,
+        '-look_ahead',
+        '1'
+      )
+    } else {
+      args.push(
+        '-c:v',
+        resolved,
+        '-global_quality',
+        String(quality),
+        '-look_ahead',
+        '1'
+      )
+    }
+  } else if (resolved === 'h264_amf' || resolved === 'hevc_amf') {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        resolved,
+        '-rc',
+        'vbr_peak',
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize,
+        '-quality',
+        'balanced'
+      )
+    } else {
+      args.push(
+        '-c:v',
+        resolved,
+        '-rc',
+        'cqp',
+        '-qp_i',
+        String(quality),
+        '-qp_p',
+        String(quality),
+        '-quality',
+        'balanced'
+      )
+    }
+  } else if (
+    resolved === 'h264_videotoolbox' ||
+    resolved === 'hevc_videotoolbox'
+  ) {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        resolved,
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize,
+        '-allow_sw',
+        '1'
+      )
+    } else {
+      const qv = mapCrfToVideotoolboxQ(options.crf)
+      args.push(
+        '-c:v',
+        resolved,
+        '-b:v',
+        '0',
+        '-q:v',
+        String(qv),
+        '-allow_sw',
+        '1'
+      )
+    }
+  } else if (resolved === 'h264_mf' || resolved === 'hevc_mf') {
+    if (useAbr) {
+      args.push(
+        '-c:v',
+        resolved,
+        '-rate_control',
+        'cbr',
+        '-b:v',
+        bv,
+        '-maxrate',
+        maxrate,
+        '-bufsize',
+        bufsize
+      )
+    } else {
+      args.push(
+        '-c:v',
+        resolved,
+        '-rate_control',
+        'quality',
+        '-quality',
+        String(quality)
+      )
+    }
+  } else {
+    // 未知：回退 libx264
+    args.push(
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      String(options.crf ?? 23)
+    )
+  }
+
+  appendH264CompatArgs(args, options, resolved)
+
+  if (
+    (HEVC_ENCODERS as readonly string[]).includes(resolved) &&
+    (format === 'mp4' || format === 'mov')
+  ) {
+    args.push('-tag:v', 'hvc1')
+  }
+
+  // 硬件编码器默认 yuv420p（软件 libx264 仅在 compat profile 时由 appendH264CompatArgs 添加）
+  if (
+    !args.includes('-pix_fmt') &&
+    isHardwareEncoder(resolved)
+  ) {
+    args.push('-pix_fmt', 'yuv420p')
+  }
+
+  return args
+}
+
+/**
  * 构建压缩参数（不含 -i / 输出路径）
  * 按输出格式与编码器生成合理 ffmpeg 参数
  * targetSizeMb>0 且 durationSec>0 时改用 ABR（-b:v），否则 CRF/质量模式
@@ -642,13 +1201,11 @@ export function buildCompressArgs(
   resolved: ResolvedEncoder,
   ctx?: BuildCompressArgsCtx
 ): string[] {
-  const args: string[] = []
   const format = options.format || 'mp4'
   const filterPlan = planVideoFilters(options, { fontfile: ctx?.fontfile })
   if (ctx?.filterPlanOut) {
     Object.assign(ctx.filterPlanOut, filterPlan)
   }
-  const quality = mapCrfToHardwareQuality(options.crf)
   const durationSec =
     ctx?.durationSec != null &&
     Number.isFinite(ctx.durationSec) &&
@@ -662,19 +1219,6 @@ export function buildCompressArgs(
       ? options.targetSizeMb
       : 0
   const useAbr = targetMb > 0 && durationSec > 0
-  if (targetMb > 0 && durationSec <= 0) {
-    ctx?.notes?.push('目标体积已设但时长未知，已回退 CRF/质量模式')
-  }
-  const audioKbps =
-    options.muteAudio === true
-      ? 0
-      : parseAudioBitrateKbps(options.videoAudioBitrate)
-  const videoKbps = useAbr
-    ? estimateVideoBitrateKbps(targetMb, durationSec, audioKbps)
-    : 0
-  const bv = `${videoKbps}k`
-  const maxrate = bv
-  const bufsize = `${videoKbps * 2}k`
 
   // 两遍：仅 ABR + 支持的软件编码器
   const pass =
@@ -690,197 +1234,28 @@ export function buildCompressArgs(
   }
   const useTwoPass = pass != null && !!passLog
 
-  if (resolved === 'libvpx-vp9') {
-    // WebM: VP9 + Opus
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'libvpx-vp9',
-        '-b:v',
-        bv,
-        '-deadline',
-        'good',
-        '-cpu-used',
-        '4',
-        '-row-mt',
-        '1'
-      )
-    } else {
-      args.push(
-        '-c:v',
-        'libvpx-vp9',
-        '-b:v',
-        '0',
-        '-crf',
-        String(quality),
-        '-deadline',
-        'good',
-        '-cpu-used',
-        '4',
-        '-row-mt',
-        '1'
-      )
-    }
-    if (useTwoPass && pass != null && passLog) {
-      args.push('-pass', String(pass), '-passlogfile', passLog)
-    }
-    if (pass === 1 || options.muteAudio === true) {
-      args.push('-an')
-    } else {
-      args.push('-c:a', 'libopus', '-b:a', resolveVideoAudioBitrate(options))
-    }
-    appendVideoFilterArgs(args, filterPlan, options, pass)
-    // pass1 用 null 容器；pass2 / 单遍用 webm
-    if (pass === 1) {
-      args.push('-f', 'null')
-    } else {
-      args.push('-f', 'webm')
-    }
-    return args
-  }
+  const args = buildVideoEncoderArgs(options, resolved, {
+    durationSec: ctx?.durationSec,
+    notes: ctx?.notes
+  })
 
-  // H.264 系列
-  if (resolved === 'libx264') {
-    const x264Preset = resolveEncodePreset(options)
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'libx264',
-        '-preset',
-        x264Preset,
-        '-b:v',
-        bv,
-        '-maxrate',
-        maxrate,
-        '-bufsize',
-        bufsize
-      )
-    } else {
-      args.push('-c:v', 'libx264', '-preset', x264Preset, '-crf', String(options.crf))
-    }
-  } else if (resolved === 'h264_nvenc') {
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'h264_nvenc',
-        '-preset',
-        'p4',
-        '-rc',
-        'vbr',
-        '-b:v',
-        bv,
-        '-maxrate',
-        maxrate,
-        '-bufsize',
-        bufsize
-      )
-    } else {
-      args.push(
-        '-c:v',
-        'h264_nvenc',
-        '-preset',
-        'p4',
-        '-rc',
-        'vbr',
-        '-cq',
-        String(quality),
-        '-b:v',
-        '0'
-      )
-    }
-  } else if (resolved === 'h264_qsv') {
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'h264_qsv',
-        '-b:v',
-        bv,
-        '-maxrate',
-        maxrate,
-        '-bufsize',
-        bufsize,
-        '-look_ahead',
-        '1'
-      )
-    } else {
-      args.push(
-        '-c:v',
-        'h264_qsv',
-        '-global_quality',
-        String(quality),
-        '-look_ahead',
-        '1'
-      )
-    }
-  } else if (resolved === 'h264_amf') {
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'h264_amf',
-        '-rc',
-        'vbr_peak',
-        '-b:v',
-        bv,
-        '-maxrate',
-        maxrate,
-        '-bufsize',
-        bufsize,
-        '-quality',
-        'balanced'
-      )
-    } else {
-      args.push(
-        '-c:v',
-        'h264_amf',
-        '-rc',
-        'cqp',
-        '-qp_i',
-        String(quality),
-        '-qp_p',
-        String(quality),
-        '-quality',
-        'balanced'
-      )
-    }
-  } else if (resolved === 'h264_videotoolbox') {
-    // VideoToolbox：质量模式用 -b:v 0 -q:v；码率模式用 -b:v
-    if (useAbr) {
-      args.push(
-        '-c:v',
-        'h264_videotoolbox',
-        '-b:v',
-        bv,
-        '-maxrate',
-        maxrate,
-        '-bufsize',
-        bufsize,
-        '-allow_sw',
-        '1'
-      )
-    } else {
-      const qv = mapCrfToVideotoolboxQ(options.crf)
-      args.push(
-        '-c:v',
-        'h264_videotoolbox',
-        '-b:v',
-        '0',
-        '-q:v',
-        String(qv),
-        '-allow_sw',
-        '1'
-      )
+  // pass1 时去掉 hvc1（null 输出无需 tag）
+  if (pass === 1) {
+    const tagIdx = args.indexOf('-tag:v')
+    if (tagIdx >= 0) {
+      args.splice(tagIdx, 2)
     }
   }
-
-  appendH264CompatArgs(args, options, resolved)
 
   if (useTwoPass && pass != null && passLog) {
     args.push('-pass', String(pass), '-passlogfile', passLog)
   }
 
-  // 音频：pass1 / 静音无音轨；其余 AAC
+  // 音频
   if (pass === 1 || options.muteAudio === true) {
     args.push('-an')
+  } else if (resolved === 'libvpx-vp9') {
+    args.push('-c:a', 'libopus', '-b:a', resolveVideoAudioBitrate(options))
   } else {
     args.push('-c:a', 'aac', '-b:a', resolveVideoAudioBitrate(options))
   }
@@ -890,11 +1265,12 @@ export function buildCompressArgs(
   // 容器相关
   if (pass === 1) {
     args.push('-f', 'null')
+  } else if (resolved === 'libvpx-vp9') {
+    args.push('-f', 'webm')
   } else {
     if (format === 'mp4' || format === 'mov') {
       args.push('-movflags', '+faststart')
     }
-
     if (format === 'mp4') {
       args.push('-f', 'mp4')
     } else if (format === 'mov') {
@@ -1077,8 +1453,30 @@ export function resolveOutputDir(
 }
 
 /**
+ * 解析图片输出扩展名
+ * - keep / 未设：用输入扩展名（去点），jpeg→jpg
+ * - jpeg → jpg
+ */
+function resolveImageOutputExt(
+  inputPath: string,
+  format?: 'jpeg' | 'png' | 'webp' | 'keep'
+): string {
+  if (!format || format === 'keep') {
+    const raw = path.extname(inputPath).replace(/^\./, '').toLowerCase()
+    if (!raw) return 'jpg'
+    if (raw === 'jpeg') return 'jpg'
+    return raw
+  }
+  if (format === 'jpeg') return 'jpg'
+  return format
+}
+
+/**
  * 根据输入路径与选项生成输出路径（不检查文件是否存在）
- * mode=audio 时扩展名用 audioFormat，默认模板 {name}_audio
+ * - mode=audio：扩展名用 audioFormat，默认模板 {name}_audio
+ * - mode=image|image-crop|image-stitch：扩展名来自 options.image?.format，默认模板 {name}_img
+ * - mode=video-concat：与 compress 类似，默认模板 {name}_concat
+ * - mode=media-compose：默认模板 {name}_compose
  * @param now 可选时钟注入，便于单测 date/time 占位符
  */
 export function buildOutputPath(
@@ -1087,9 +1485,31 @@ export function buildOutputPath(
   now?: Date
 ): string {
   const base = path.basename(inputPath, path.extname(inputPath))
-  const isAudio = options.mode === 'audio'
-  const ext = isAudio ? options.audioFormat || 'm4a' : options.format || 'mp4'
-  const defaultTpl = isAudio ? DEFAULT_AUDIO_NAME_TEMPLATE : DEFAULT_NAME_TEMPLATE
+  const mode = options.mode
+  const isAudio = mode === 'audio'
+  const isImage = isImageMode(mode)
+  const isConcat = mode === 'video-concat'
+  const isCompose = mode === 'media-compose'
+
+  let ext: string
+  let defaultTpl: string
+  if (isAudio) {
+    ext = options.audioFormat || 'm4a'
+    defaultTpl = DEFAULT_AUDIO_NAME_TEMPLATE
+  } else if (isImage) {
+    ext = resolveImageOutputExt(inputPath, options.image?.format)
+    defaultTpl = DEFAULT_IMAGE_NAME_TEMPLATE
+  } else if (isConcat) {
+    ext = options.format || 'mp4'
+    defaultTpl = DEFAULT_CONCAT_NAME_TEMPLATE
+  } else if (isCompose) {
+    ext = options.format || 'mp4'
+    defaultTpl = DEFAULT_COMPOSE_NAME_TEMPLATE
+  } else {
+    ext = options.format || 'mp4'
+    defaultTpl = DEFAULT_NAME_TEMPLATE
+  }
+
   const clock = now ?? new Date()
   // 自定义模板 UI 哨兵值不应直接当文件名
   let tpl = options.nameTemplate || defaultTpl

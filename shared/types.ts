@@ -4,29 +4,57 @@ export type PresetId = 'archive' | 'standard' | 'social' | 'custom'
 /** 输出格式（视频容器） */
 export type OutputFormat = 'mp4' | 'webm' | 'mkv' | 'mov'
 
-/** 任务模式：视频压缩 / 仅抽音频 */
-export type TaskMode = 'compress' | 'audio'
+/** 任务模式：视频压缩 / 仅抽音频 / 图片 / 视频拼接 / 图+视频混剪 */
+export type TaskMode =
+  | 'compress'
+  | 'audio'
+  | 'image'
+  | 'image-crop'
+  | 'image-stitch'
+  | 'video-concat'
+  | 'media-compose'
 
 /** 音频抽取输出格式 */
 export type AudioFormat = 'm4a' | 'mp3' | 'opus'
 
-/** 视频编码器 / 硬件加速 */
+/** 视频编码器 / 硬件加速（含旧别名兼容） */
 export type EncoderId =
   | 'auto'
   | 'software'
+  // 旧别名（兼容）
   | 'nvenc'
   | 'qsv'
   | 'amf'
   | 'videotoolbox'
-
-/** 实际选用的视频编码器（探测/解析后） */
-export type ResolvedEncoder =
-  | 'libx264'
+  // 显式 codec
   | 'h264_nvenc'
   | 'h264_qsv'
   | 'h264_amf'
   | 'h264_videotoolbox'
+  | 'h264_mf'
+  | 'hevc_nvenc'
+  | 'hevc_qsv'
+  | 'hevc_amf'
+  | 'hevc_videotoolbox'
+  | 'hevc_mf'
+  | 'libx264'
+  | 'libx265'
+
+/** 实际选用的视频编码器（探测/解析后） */
+export type ResolvedEncoder =
+  | 'libx264'
+  | 'libx265'
   | 'libvpx-vp9'
+  | 'h264_nvenc'
+  | 'h264_qsv'
+  | 'h264_amf'
+  | 'h264_videotoolbox'
+  | 'h264_mf'
+  | 'hevc_nvenc'
+  | 'hevc_qsv'
+  | 'hevc_amf'
+  | 'hevc_videotoolbox'
+  | 'hevc_mf'
 
 /** 输出目录模式 */
 export type OutputDirMode = 'fixed' | 'sidecar' | 'dated'
@@ -56,6 +84,22 @@ export interface CompressOptions {
   crf: number
   /** 最长边限制，0 表示不缩放 */
   maxEdge: number
+  /**
+   * 分辨率缩放模式
+   * - 缺省：maxEdge>0 时按 maxEdge；否则 none
+   */
+  scaleMode?: ScaleMode
+  /** fixed / aspect 目标宽（像素） */
+  outWidth?: number
+  /** fixed 目标高（像素） */
+  outHeight?: number
+  /** aspect 模式目标比例 */
+  aspectRatio?: AspectRatioId
+  /**
+   * fixed/aspect 时：black=缩入后黑边 pad 到精确画布；none=仅等比缩入（可能小于目标）
+   * 默认建议 black
+   */
+  scalePad?: ScalePadMode
   /** 输出格式（视频模式） */
   format: OutputFormat
   /** 输出目录 */
@@ -125,6 +169,51 @@ export interface CompressOptions {
   encodePreset?: EncodePreset
   /** 水印（仅视频压缩；mode=audio 时忽略） */
   watermark?: WatermarkOptions
+  /** 画面裁切（原图像素，旋转后坐标系） */
+  crop?: { x: number; y: number; w: number; h: number }
+  /**
+   * 图片处理参数（mode 为 image / image-crop / image-stitch 时用）
+   */
+  image?: {
+    format?: 'jpeg' | 'png' | 'webp' | 'keep'
+    quality?: number
+    maxEdge?: number
+    strip?: boolean
+    crop?: { x: number; y: number; w: number; h: number }
+    /** 拼接布局 */
+    layout?: 'horizontal' | 'vertical' | 'grid'
+    /** 网格列数，layout=grid 时，默认 2 */
+    gridCols?: number
+    /** 间距像素 */
+    gap?: number
+    /** 背景色 #RRGGBB 或 transparent */
+    background?: string
+  }
+  /** 视频拼接：优先尝试流复制 */
+  concatPreferCopy?: boolean
+  /** 图+视频混剪（mode=media-compose） */
+  compose?: MediaComposeOptions
+}
+
+/** 图+视频混剪选项 */
+export interface MediaComposeOptions {
+  /** 片头静图 */
+  intro?: { imagePath: string; durationSec: number }
+  /** 片尾静图 */
+  outro?: { imagePath: string; durationSec: number }
+  /** 图叠主视频（单层 P0） */
+  overlay?: {
+    imagePath: string
+    position?: WatermarkPosition
+    opacity?: number
+    scalePercent?: number
+    marginX?: number
+    marginY?: number
+    startSec?: number
+    endSec?: number
+  }
+  /** 片头尾静图是否缩放匹配主视频（cover+pad 黑边），默认 true */
+  fitIntroOutro?: boolean
 }
 
 /** 水印模式 */
@@ -252,6 +341,46 @@ export const ENCODE_PRESET_OPTIONS: ReadonlyArray<{
 /** 视频模式默认音轨码率（保持旧任务体积） */
 export const DEFAULT_VIDEO_AUDIO_BITRATE = '128k'
 
+/** 视频分辨率缩放模式 */
+export type ScaleMode = 'none' | 'maxEdge' | 'fixed' | 'aspect'
+
+/** 按比例输出时的宽高比 ID */
+export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:3'
+
+/** fixed/aspect 填充：黑边 pad 或仅缩入 */
+export type ScalePadMode = 'none' | 'black'
+
+/** 缩放模式选项（UI） */
+export const SCALE_MODE_OPTIONS: ReadonlyArray<{
+  value: ScaleMode
+  label: string
+}> = [
+  { value: 'none', label: '不缩放' },
+  { value: 'maxEdge', label: '最长边' },
+  { value: 'fixed', label: '固定宽高' },
+  { value: 'aspect', label: '按比例' }
+]
+
+/** 宽高比选项（UI） */
+export const ASPECT_RATIO_OPTIONS: ReadonlyArray<{
+  value: AspectRatioId
+  label: string
+}> = [
+  { value: '16:9', label: '16:9 横屏' },
+  { value: '9:16', label: '9:16 竖屏' },
+  { value: '1:1', label: '1:1 方形' },
+  { value: '4:3', label: '4:3' }
+]
+
+/** 缩放填充选项（UI） */
+export const SCALE_PAD_OPTIONS: ReadonlyArray<{
+  value: ScalePadMode
+  label: string
+}> = [
+  { value: 'black', label: '黑边填充' },
+  { value: 'none', label: '无（仅缩入）' }
+]
+
 /** 预设定义 */
 export interface CompressPreset {
   id: PresetId
@@ -277,6 +406,8 @@ export interface CompressTask {
   /** 错误信息 */
   error?: string
   options: CompressOptions
+  /** 多输入（拼接）；缺省时用 [inputPath] */
+  inputPaths?: string[]
   /** 输入文件大小（字节），开始前记录 */
   inputSize?: number
   /** 输出文件大小（字节），完成后记录 */
@@ -325,23 +456,25 @@ export interface FfmpegStatus {
 
 /** 硬件编码器探测结果 */
 export interface EncoderDetectResult {
+  /** = h264_nvenc 可用（兼容旧字段） */
   nvenc: boolean
+  /** = h264_qsv 可用 */
   qsv: boolean
+  /** = h264_amf 可用 */
   amf: boolean
-  /** Apple VideoToolbox（通常仅 darwin） */
+  /** = h264_videotoolbox 可用（通常仅 darwin） */
   videotoolbox?: boolean
+  /** 细粒度 codec 可用性（列表 + 硬件试编） */
+  codecs?: Partial<Record<ResolvedEncoder, boolean>>
   /** 推荐：auto 时会选用的编码器 */
   preferred: ResolvedEncoder
   error?: string
   /** 是否对列表中的硬件做了试编验证 */
   probed?: boolean
-  /** 试编验证结果（与 nvenc/qsv/amf/videotoolbox 一致时表示已验证） */
-  verified?: {
-    nvenc: boolean
-    qsv: boolean
-    amf: boolean
-    videotoolbox?: boolean
-  }
+  /** 试编验证结果（key 为 codec 名或旧别名） */
+  verified?: Partial<Record<string, boolean>>
+  /** UI：每个 EncoderId 选项是否可用 */
+  availability?: Array<{ id: EncoderId; available: boolean; codec?: string }>
 }
 
 /** 添加文件结果 */
@@ -420,6 +553,16 @@ export interface AppSettings {
   customCrf: number
   customMaxEdge: number
   customFormat: OutputFormat
+  /** 自定义分辨率缩放模式（仅 custom 预设相关） */
+  scaleMode?: ScaleMode
+  /** 自定义目标宽 */
+  outWidth?: number
+  /** 自定义目标高 */
+  outHeight?: number
+  /** 自定义目标比例 */
+  aspectRatio?: AspectRatioId
+  /** 自定义缩放填充 */
+  scalePad?: ScalePadMode
   /** 输出文件名模板，默认 `{name}_compressed` */
   nameTemplate: string
   /** 输出目录模式，默认 fixed */
@@ -459,6 +602,74 @@ export interface AppSettings {
    * 可为 magick(.exe) 全路径，或含 magick 的目录
    */
   imagemagickPath: string
+  /** 图片输出格式，默认 jpeg */
+  imageFormat: 'jpeg' | 'png' | 'webp' | 'keep'
+  /** 图片质量 1–100，默认 80 */
+  imageQuality: number
+  /** 图片最长边，0=不限制，默认 1920 */
+  imageMaxEdge: number
+  /** 去掉图片元数据，默认 true */
+  imageStrip: boolean
+  /** 图片拼接布局，默认 horizontal */
+  imageLayout: 'horizontal' | 'vertical' | 'grid'
+  /** 网格列数，默认 2 */
+  imageGridCols: number
+  /** 拼接间距像素，默认 0 */
+  imageGap: number
+  /** 拼接背景色，默认 #000000 */
+  imageBackground: string
+  /** 视频拼接优先流复制，默认 true */
+  concatPreferCopy: boolean
+  /** 是否允许局域网远程访问，默认 false */
+  lanRemoteEnabled: boolean
+  /** 局域网 HTTP 服务端口，默认 17890 */
+  lanPort: number
+  /** 远程访问用户名，默认 admin */
+  lanUsername: string
+  /** 远程访问密码 scrypt 哈希（含 salt），勿存明文 */
+  lanPasswordHash: string
+}
+
+/** 局域网远程访问运行状态（设置 UI / IPC） */
+export interface LanStatus {
+  /** 设置中是否开启 */
+  enabled: boolean
+  /** HTTP 服务是否正在监听 */
+  running: boolean
+  port: number
+  username: string
+  /** 是否已设置密码 */
+  hasPassword: boolean
+  /** 本机可访问地址列表，如 http://192.168.1.2:17890 */
+  urls: string[]
+  /** 启动失败等原因 */
+  error?: string
+}
+
+/** 局域网远程任务列表项（脱敏，不含本机绝对路径） */
+export interface LanTaskView {
+  id: string
+  fileName: string
+  status: TaskStatus
+  progress: number
+  inputSize?: number
+  outputSize?: number
+  error?: string
+  time?: string
+  speed?: string
+  etaSec?: number
+  mode?: TaskMode
+  /** 是否可下载 */
+  downloadable: boolean
+}
+
+/** 设置/更新局域网远程配置（密码仅在修改时传明文，主进程哈希后存储） */
+export interface LanRemoteConfigInput {
+  enabled?: boolean
+  port?: number
+  username?: string
+  /** 新密码明文；空串表示不修改；仅在此字段出现时更新哈希 */
+  password?: string
 }
 
 /** 图片处理引擎 */
@@ -484,6 +695,14 @@ export interface ImageProcessOptions {
   quality?: number
   /** 去掉元数据，默认 true */
   strip?: boolean
+  /** 裁切区域（像素） */
+  crop?: { x: number; y: number; w: number; h: number }
+  /** 多图拼接输入（stitch 时优先用 inputs） */
+  inputs?: string[]
+  layout?: 'horizontal' | 'vertical' | 'grid'
+  gridCols?: number
+  gap?: number
+  background?: string
 }
 
 /** 图片处理结果 */
@@ -544,6 +763,16 @@ export const IpcChannels = {
   IMAGE_PROCESS: 'image:process',
   /** 设置 ImageMagick 路径（空串=自动探测） */
   IMAGE_SET_MAGICK_PATH: 'image:set-magick-path',
+  /** 读取图片尺寸（sharp metadata，EXIF orient 后） */
+  IMAGE_GET_INFO: 'image:get-info',
+  /** 生成图片预览 data URL（缩略 jpeg） */
+  IMAGE_GET_DATA_URL: 'image:get-data-url',
+  /** 从视频抽取一帧预览（jpeg data URL） */
+  VIDEO_EXTRACT_FRAME: 'video:extract-frame',
+  /** 获取局域网远程访问状态 */
+  LAN_GET_STATUS: 'lan:get-status',
+  /** 设置局域网远程访问配置（开关/端口/账号/密码） */
+  LAN_SET_CONFIG: 'lan:set-config',
   /** 清空已持久化任务 */
   TASKS_CLEAR: 'tasks:clear',
   /** 应用信息（设置抽屉「关于」） */
@@ -581,6 +810,8 @@ export const IpcChannels = {
   TASK_PROGRESS: 'task:progress',
   TASK_END: 'task:end',
   TASK_QUEUED: 'task:queued',
+  /** 主 → 渲染：外部入队的完整任务（如局域网上传） */
+  TASK_ADDED: 'task:added',
   UPDATE_STATUS: 'update:status',
   /** 主 → 渲染：转发拖拽文件 */
   FILES_DROPPED: 'files:dropped',
@@ -649,6 +880,49 @@ export const VIDEO_EXTENSIONS = [
   '.3gp'
 ]
 
+/** 支持的图片扩展名 */
+export const IMAGE_EXTENSIONS = [
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.bmp',
+  '.gif',
+  '.tif',
+  '.tiff'
+]
+
+/** 图片预设 ID */
+export type ImagePresetId =
+  | 'optimize'
+  | 'standard'
+  | 'social'
+  | 'thumb'
+  | 'custom'
+
+/** 图片预设选项（UI） */
+export const IMAGE_PRESET_OPTIONS: ReadonlyArray<{
+  value: ImagePresetId
+  label: string
+}> = [
+  { value: 'optimize', label: '优化压缩' },
+  { value: 'standard', label: '标准' },
+  { value: 'social', label: '社交分享' },
+  { value: 'thumb', label: '缩略图' },
+  { value: 'custom', label: '自定义' }
+]
+
+/** 默认图片预设参数 */
+export const DEFAULT_IMAGE_PRESETS: Record<
+  Exclude<ImagePresetId, 'custom'>,
+  { maxEdge: number; quality: number; format: 'jpeg' | 'png' | 'webp' | 'keep' }
+> = {
+  optimize: { maxEdge: 0, quality: 85, format: 'keep' },
+  standard: { maxEdge: 1920, quality: 80, format: 'jpeg' },
+  social: { maxEdge: 1280, quality: 75, format: 'jpeg' },
+  thumb: { maxEdge: 400, quality: 70, format: 'jpeg' }
+}
+
 /** 输出格式选项（UI） */
 export const OUTPUT_FORMAT_OPTIONS: Array<{
   value: OutputFormat
@@ -661,17 +935,25 @@ export const OUTPUT_FORMAT_OPTIONS: Array<{
   { value: 'webm', label: 'WebM (VP9 + Opus)', note: '仅软件编码' }
 ]
 
-/** 编码器选项（UI） */
+/** 编码器选项（UI）；不可用项由前端根据 encoderInfo 加 disabled */
 export const ENCODER_OPTIONS: Array<{
   value: EncoderId
   label: string
 }> = [
   { value: 'auto', label: '自动（优先硬件）' },
-  { value: 'software', label: '软件 x264' },
-  { value: 'nvenc', label: 'NVIDIA NVENC' },
-  { value: 'qsv', label: 'Intel QSV' },
-  { value: 'amf', label: 'AMD AMF' },
-  { value: 'videotoolbox', label: 'Apple VideoToolbox' }
+  { value: 'software', label: '关闭（仅 CPU）' },
+  { value: 'h264_nvenc', label: 'h264_nvenc (NVIDIA NVENC)' },
+  { value: 'h264_qsv', label: 'h264_qsv (Intel QSV)' },
+  { value: 'h264_amf', label: 'h264_amf (AMD AMF)' },
+  { value: 'h264_videotoolbox', label: 'h264_videotoolbox (VideoToolbox)' },
+  { value: 'h264_mf', label: 'h264_mf (MediaFoundation)' },
+  { value: 'hevc_nvenc', label: 'hevc_nvenc (NVIDIA NVENC)' },
+  { value: 'hevc_qsv', label: 'hevc_qsv (Intel QSV)' },
+  { value: 'hevc_amf', label: 'hevc_amf (AMD AMF)' },
+  { value: 'hevc_videotoolbox', label: 'hevc_videotoolbox (VideoToolbox)' },
+  { value: 'hevc_mf', label: 'hevc_mf (MediaFoundation)' },
+  { value: 'libx264', label: 'libx264 (CPU)' },
+  { value: 'libx265', label: 'libx265 (CPU)' }
 ]
 
 /** 输出目录模式选项（UI） */
@@ -687,7 +969,12 @@ export const OUTPUT_DIR_MODE_OPTIONS: Array<{
 /** 任务模式选项（UI） */
 export const TASK_MODE_OPTIONS: Array<{ value: TaskMode; label: string }> = [
   { value: 'compress', label: '视频压缩' },
-  { value: 'audio', label: '仅抽取音频' }
+  { value: 'audio', label: '仅抽取音频' },
+  { value: 'image', label: '图片压缩' },
+  { value: 'image-crop', label: '图片裁切' },
+  { value: 'image-stitch', label: '图片拼接' },
+  { value: 'video-concat', label: '视频拼接' },
+  { value: 'media-compose', label: '图+视频' }
 ]
 
 /** 音频格式选项（UI） */
@@ -723,6 +1010,36 @@ export const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
 
 /** 默认输出文件名模板 */
 export const DEFAULT_NAME_TEMPLATE = '{name}_compressed'
+
+/** 默认图片输出命名模板 */
+export const DEFAULT_IMAGE_NAME_TEMPLATE = '{name}_img'
+
+/** 默认视频拼接输出命名模板 */
+export const DEFAULT_CONCAT_NAME_TEMPLATE = '{name}_concat'
+
+/** 默认图+视频混剪输出命名模板 */
+export const DEFAULT_COMPOSE_NAME_TEMPLATE = '{name}_compose'
+
+/** 图片输出格式选项（UI） */
+export const IMAGE_FORMAT_OPTIONS: ReadonlyArray<{
+  value: 'jpeg' | 'png' | 'webp' | 'keep'
+  label: string
+}> = [
+  { value: 'jpeg', label: 'JPEG' },
+  { value: 'png', label: 'PNG' },
+  { value: 'webp', label: 'WebP' },
+  { value: 'keep', label: '保持原格式' }
+]
+
+/** 图片拼接布局选项（UI） */
+export const IMAGE_LAYOUT_OPTIONS: ReadonlyArray<{
+  value: 'horizontal' | 'vertical' | 'grid'
+  label: string
+}> = [
+  { value: 'horizontal', label: '横向' },
+  { value: 'vertical', label: '纵向' },
+  { value: 'grid', label: '网格' }
+]
 
 /** 输出命名模板选项（UI） */
 export const NAME_TEMPLATE_OPTIONS: Array<{
@@ -801,6 +1118,52 @@ export interface ElectronAPI {
    * 空串 = 清除覆盖，回退 PATH 自动探测
    */
   setMagickPath: (path: string) => Promise<{ ok: boolean; error?: string }>
+  /** 读取图片尺寸（EXIF orient 后） */
+  getImageInfo: (
+    path: string
+  ) => Promise<{ ok: boolean; width?: number; height?: number; error?: string }>
+  /**
+   * 生成预览 data URL（jpeg base64）
+   * @param maxEdge 预览最长边，默认 1600
+   */
+  getImageDataUrl: (
+    path: string,
+    maxEdge?: number
+  ) => Promise<{
+    ok: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    previewWidth?: number
+    previewHeight?: number
+    error?: string
+  }>
+  /**
+   * 从视频抽取一帧为 jpeg data URL（可视化裁切预览）
+   * width/height 为源视频显示尺寸（裁切坐标系）
+   */
+  extractVideoFrame: (opts: {
+    path: string
+    timeSec?: number
+    maxEdge?: number
+  }) => Promise<{
+    ok: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    previewWidth?: number
+    previewHeight?: number
+    error?: string
+  }>
+  /** 获取局域网远程访问状态 */
+  getLanStatus: () => Promise<LanStatus>
+  /**
+   * 设置局域网远程访问（开关/端口/账号/密码）
+   * password 仅在需要修改时传入明文，主进程 scrypt 哈希后写入
+   */
+  setLanRemoteConfig: (
+    config: LanRemoteConfigInput
+  ) => Promise<{ ok: boolean; status: LanStatus; error?: string }>
   /** 清空已持久化的任务列表 */
   clearStoredTasks: () => Promise<{ ok: boolean; error?: string }>
   /** 重置全部设置为默认值，返回重置后的设置 */
@@ -861,6 +1224,8 @@ export interface ElectronAPI {
   onTaskProgress: (callback: (payload: ProgressPayload) => void) => () => void
   onTaskEnd: (callback: (payload: TaskEndPayload) => void) => () => void
   onTaskQueued: (callback: (taskId: string) => void) => () => void
+  /** 订阅外部入队任务（局域网等） */
+  onTaskAdded: (callback: (task: CompressTask) => void) => () => void
   onUpdateStatus: (callback: (payload: UpdateStatusPayload) => void) => () => void
   /** 订阅窗口最大化状态 */
   onWindowMaximizedChanged: (callback: (maximized: boolean) => void) => () => void

@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import {onMounted, onUnmounted, ref} from 'vue'
+import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import type {AppInfo, ImageEngineStatus} from '@shared/types'
+import type {AppInfo, ImageEngineStatus, LanStatus} from '@shared/types'
+import {IMAGE_EXTENSIONS} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
 import DropZone from './components/DropZone.vue'
@@ -61,10 +62,44 @@ const {
   watermarkFontSize,
   watermarkMargin,
   custom,
+  scaleMode,
+  outWidth,
+  outHeight,
+  aspectRatio,
+  scalePad,
   currentPreset,
   isCustom,
   isWebm,
   isAudioMode,
+  isImageMode,
+  isVideoConcatMode,
+  isMediaComposeMode,
+  isVideoCompressMode,
+  imageFormat,
+  imageQuality,
+  imageMaxEdge,
+  imageStrip,
+  imageLayout,
+  imageGridCols,
+  imageGap,
+  imageBackground,
+  cropX,
+  cropY,
+  cropW,
+  cropH,
+  concatPreferCopy,
+  composeIntroPath,
+  composeIntroDuration,
+  composeOutroPath,
+  composeOutroDuration,
+  composeOverlayPath,
+  composeOverlayPosition,
+  composeOverlayOpacity,
+  composeOverlayScalePercent,
+  composeOverlayMargin,
+  composeOverlayStartSec,
+  composeOverlayEndSec,
+  composeFitIntroOutro,
   buildOptions,
   loadSettings,
   onPresetChange,
@@ -77,6 +112,34 @@ const {
   onTwoPassChange,
   onThemeChange,
   onTaskModeChange,
+  onImageFormatChange,
+  onImageQualityChange,
+  onImageMaxEdgeChange,
+  onImageStripChange,
+  onImageLayoutChange,
+  onImageGridColsChange,
+  onImageGapChange,
+  onImageBackgroundChange,
+  onCropXChange,
+  onCropYChange,
+  onCropWChange,
+  onCropHChange,
+  onConcatPreferCopyChange,
+  onComposeIntroPathChange,
+  onComposeIntroDurationChange,
+  onComposeOutroPathChange,
+  onComposeOutroDurationChange,
+  onComposeOverlayPathChange,
+  onComposeOverlayPositionChange,
+  onComposeOverlayOpacityChange,
+  onComposeOverlayScalePercentChange,
+  onComposeOverlayMarginChange,
+  onComposeOverlayStartSecChange,
+  onComposeOverlayEndSecChange,
+  onComposeFitIntroOutroChange,
+  onSelectComposeIntroImage,
+  onSelectComposeOutroImage,
+  onSelectComposeOverlayImage,
   onAudioFormatChange,
   onAudioBitrateChange,
   onNotifyOnCompleteChange,
@@ -98,6 +161,11 @@ const {
   onWatermarkScalePercentChange,
   onWatermarkFontSizeChange,
   onWatermarkMarginChange,
+  onScaleModeChange,
+  onOutWidthChange,
+  onOutHeightChange,
+  onAspectRatioChange,
+  onScalePadChange,
   onSelectWatermarkImage,
   onSelectOutput,
   startWatchers,
@@ -138,10 +206,44 @@ const {
   outputDir,
   ffmpegStatus,
   concurrency,
-  persistTasks
+  persistTasks,
+  taskMode
 })
 
 syncPendingOptionsRef = syncPendingOptions
+
+/** 可视化裁切预览：取第一个 pending/failed 任务路径 */
+const cropPreviewPath = computed(() => {
+  const mode = taskMode.value
+  if (mode !== 'image-crop' && mode !== 'compress') return ''
+  const preferImage = mode === 'image-crop'
+  const imageExts = new Set(
+    (IMAGE_EXTENSIONS as string[]).map((e) => e.toLowerCase())
+  )
+  const candidates = tasks.value.filter(
+    (t) => t.status === 'pending' || t.status === 'failed'
+  )
+  for (const t of candidates) {
+    const p = (t.inputPath || '').trim()
+    if (!p) continue
+    const ext = p.includes('.') ? p.slice(p.lastIndexOf('.')).toLowerCase() : ''
+    if (preferImage) {
+      if (imageExts.has(ext)) return p
+    } else {
+      return p
+    }
+  }
+  // image-crop 时若无 pending 图，再扫全部任务
+  if (preferImage) {
+    for (const t of tasks.value) {
+      const p = (t.inputPath || '').trim()
+      if (!p) continue
+      const ext = p.includes('.') ? p.slice(p.lastIndexOf('.')).toLowerCase() : ''
+      if (imageExts.has(ext)) return p
+    }
+  }
+  return candidates[0]?.inputPath?.trim() || ''
+})
 
 const {
   appVersion,
@@ -181,9 +283,50 @@ const {
 
 const appInfo = ref<AppInfo | null>(null)
 const imageStatus = ref<ImageEngineStatus | null>(null)
+const lanStatus = ref<LanStatus | null>(null)
+const lanSaving = ref(false)
 const shortcutHelpVisible = ref(false)
 const settingsVisible = ref(false)
 const closeConfirmVisible = ref(false)
+
+async function refreshLanStatus(): Promise<void> {
+  try {
+    lanStatus.value = await window.electronAPI.getLanStatus()
+  } catch {
+    lanStatus.value = null
+  }
+}
+
+async function onSaveLanConfig(config: {
+  enabled?: boolean
+  port?: number
+  username?: string
+  password?: string
+}): Promise<void> {
+  lanSaving.value = true
+  try {
+    const res = await window.electronAPI.setLanRemoteConfig(config)
+    lanStatus.value = res.status
+    if (res.ok) {
+      if (config.password) {
+        ElMessage.success('远程设置已保存（密码已更新，旧会话已失效）')
+      } else if (res.status.running) {
+        ElMessage.success('远程访问已开启')
+      } else if (config.enabled === false) {
+        ElMessage.success('远程访问已关闭')
+      } else {
+        ElMessage.success('远程设置已保存')
+      }
+    } else {
+      ElMessage.error(res.error || res.status.error || '保存远程设置失败')
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    ElMessage.error(message || '保存远程设置失败')
+  } finally {
+    lanSaving.value = false
+  }
+}
 
 async function loadImageStatus(): Promise<void> {
   try {
@@ -234,6 +377,9 @@ onMounted(async () => {
   // 4.1) 图片引擎状态
   await loadImageStatus()
 
+  // 4.2) 局域网远程状态
+  await refreshLanStatus()
+
   // 5) 版本信息
   await loadVersion()
 
@@ -279,8 +425,8 @@ onUnmounted(() => {
 })
 
 async function onCloseDecide(
-  action: 'tray' | 'quit',
-  remember: boolean
+    action: 'tray' | 'quit',
+    remember: boolean
 ): Promise<void> {
   if (remember) {
     onCloseActionChange(action)
@@ -355,17 +501,17 @@ async function onTestImageEngine(): Promise<void> {
     const inputPath = pick.path
     const stamp = Date.now()
     const base =
-      inputPath.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || 'test'
+        inputPath.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || 'test'
     const outDir =
-      (typeof window !== 'undefined' &&
-        (appInfo.value?.userDataPath
-          ? `${appInfo.value.userDataPath}\\image-test`
-          : '')) ||
-      ''
+        (typeof window !== 'undefined' &&
+            (appInfo.value?.userDataPath
+                ? `${appInfo.value.userDataPath}\\image-test`
+                : '')) ||
+        ''
     // 输出路径由主进程确保目录；userData 不可用时用输入同目录
     const outputPath = outDir
-      ? `${outDir}\\${base}_${stamp}.jpg`
-      : inputPath.replace(/(\.[^.]+)?$/, `_${stamp}.jpg`)
+        ? `${outDir}\\${base}_${stamp}.jpg`
+        : inputPath.replace(/(\.[^.]+)?$/, `_${stamp}.jpg`)
     const result = await window.electronAPI.processImage({
       inputPath,
       outputPath,
@@ -376,7 +522,7 @@ async function onTestImageEngine(): Promise<void> {
     })
     if (result.ok && result.outputPath) {
       ElMessage.success(
-        `引擎测试成功（${result.engine || imageEngine.value}）→ ${result.width || '?'}×${result.height || '?'}`
+          `引擎测试成功（${result.engine || imageEngine.value}）→ ${result.width || '?'}×${result.height || '?'}`
       )
       await window.electronAPI.showItemInFolder(result.outputPath)
       await loadImageStatus()
@@ -406,7 +552,7 @@ async function onOpenAppData(): Promise<void> {
 /** 修改用户数据目录（需重启生效） */
 async function onChangeDataDir(): Promise<void> {
   const res = await window.electronAPI.selectDirectory(
-    appInfo.value?.userDataPath || undefined
+      appInfo.value?.userDataPath || undefined
   )
   if (!res.path) return
   try {
@@ -420,14 +566,14 @@ async function onChangeDataDir(): Promise<void> {
       return
     }
     if (appInfo.value) {
-      appInfo.value = { ...appInfo.value, userDataPath: res.path }
+      appInfo.value = {...appInfo.value, userDataPath: res.path}
     }
     const migrated = r.migrated?.length ?? 0
     const migrateErr = r.migrateErrors?.length ?? 0
     const tip =
-      migrated > 0
-        ? `已迁移 ${migrated} 项到新目录（缓存类目录已跳过）`
-        : '数据目录已更新（无可迁移文件或目标已存在同名文件）'
+        migrated > 0
+            ? `已迁移 ${migrated} 项到新目录（缓存类目录已跳过）`
+            : '数据目录已更新（无可迁移文件或目标已存在同名文件）'
     if (migrateErr > 0) {
       ElMessage.warning(`${tip}；${migrateErr} 项迁移失败`)
     } else {
@@ -435,13 +581,13 @@ async function onChangeDataDir(): Promise<void> {
     }
     try {
       await ElMessageBox.confirm(
-        '数据目录已切换，设置与任务列表会尽量迁移到新目录（不覆盖已有文件；Chromium 缓存不迁移）。是否立即重启？',
-        '重启应用',
-        {
-          type: 'info',
-          confirmButtonText: '立即重启',
-          cancelButtonText: '稍后'
-        }
+          '数据目录已切换，设置与任务列表会尽量迁移到新目录（不覆盖已有文件；Chromium 缓存不迁移）。是否立即重启？',
+          '重启应用',
+          {
+            type: 'info',
+            confirmButtonText: '立即重启',
+            cancelButtonText: '稍后'
+          }
       )
       await window.electronAPI.relaunchApp()
     } catch {
@@ -480,6 +626,7 @@ async function onResetSettings(): Promise<void> {
     startTheme()
     await loadStatus()
     await loadImageStatus()
+    await refreshLanStatus()
     if (persistTasks.value !== prevPersistTasks) {
       await loadTasks()
     }
@@ -525,6 +672,8 @@ async function onResetSettings(): Promise<void> {
         :imagemagick-path="imagemagickPath"
         :image-status="imageStatus"
         :is-packaged="isPackaged"
+        :lan-saving="lanSaving"
+        :lan-status="lanStatus"
         :notify-on-complete="notifyOnComplete"
         :persist-tasks="persistTasks"
         :theme="theme"
@@ -544,7 +693,9 @@ async function onResetSettings(): Promise<void> {
         @persist-tasks-change="onPersistTasksChange"
         @re-detect-ffmpeg="loadStatus"
         @re-detect-image="loadImageStatus"
+        @refresh-lan-status="refreshLanStatus"
         @reset-settings="onResetSettings"
+        @save-lan-config="onSaveLanConfig"
         @test-image-engine="onTestImageEngine"
         @theme-change="onThemeChange"
     />
@@ -562,7 +713,7 @@ async function onResetSettings(): Promise<void> {
         @install-update="onInstallUpdate"
     />
 
-    <ShortcutHelpDialog v-model="shortcutHelpVisible" />
+    <ShortcutHelpDialog v-model="shortcutHelpVisible"/>
 
     <CloseConfirmDialog
         v-model="closeConfirmVisible"
@@ -578,6 +729,10 @@ async function onResetSettings(): Promise<void> {
         :encoder="encoder"
         :encoder-info="encoderInfo"
         :is-audio-mode="isAudioMode"
+        :is-image-mode="isImageMode"
+        :is-video-concat-mode="isVideoConcatMode"
+        :is-media-compose-mode="isMediaComposeMode"
+        :is-video-compress-mode="isVideoCompressMode"
         :is-custom="isCustom"
         :is-webm="isWebm"
         :name-template="nameTemplate"
@@ -605,6 +760,37 @@ async function onResetSettings(): Promise<void> {
         :watermark-scale-percent="watermarkScalePercent"
         :watermark-font-size="watermarkFontSize"
         :watermark-margin="watermarkMargin"
+        :image-format="imageFormat"
+        :image-quality="imageQuality"
+        :image-max-edge="imageMaxEdge"
+        :image-strip="imageStrip"
+        :image-layout="imageLayout"
+        :image-grid-cols="imageGridCols"
+        :image-gap="imageGap"
+        :image-background="imageBackground"
+        :crop-x="cropX"
+        :crop-y="cropY"
+        :crop-w="cropW"
+        :crop-h="cropH"
+        :crop-preview-path="cropPreviewPath"
+        :concat-prefer-copy="concatPreferCopy"
+        :compose-intro-path="composeIntroPath"
+        :compose-intro-duration="composeIntroDuration"
+        :compose-outro-path="composeOutroPath"
+        :compose-outro-duration="composeOutroDuration"
+        :compose-overlay-path="composeOverlayPath"
+        :compose-overlay-position="composeOverlayPosition"
+        :compose-overlay-opacity="composeOverlayOpacity"
+        :compose-overlay-scale-percent="composeOverlayScalePercent"
+        :compose-overlay-margin="composeOverlayMargin"
+        :compose-overlay-start-sec="composeOverlayStartSec"
+        :compose-overlay-end-sec="composeOverlayEndSec"
+        :compose-fit-intro-outro="composeFitIntroOutro"
+        :scale-mode="scaleMode"
+        :out-width="outWidth"
+        :out-height="outHeight"
+        :aspect-ratio="aspectRatio"
+        :scale-pad="scalePad"
         @apply-to-pending="applyOptionsToPending"
         @audio-bitrate-change="onAudioBitrateChange"
         @audio-format-change="onAudioFormatChange"
@@ -635,12 +821,46 @@ async function onResetSettings(): Promise<void> {
         @watermark-scale-percent-change="onWatermarkScalePercentChange"
         @watermark-font-size-change="onWatermarkFontSizeChange"
         @watermark-margin-change="onWatermarkMarginChange"
+        @image-format-change="onImageFormatChange"
+        @image-quality-change="onImageQualityChange"
+        @image-max-edge-change="onImageMaxEdgeChange"
+        @image-strip-change="onImageStripChange"
+        @image-layout-change="onImageLayoutChange"
+        @image-grid-cols-change="onImageGridColsChange"
+        @image-gap-change="onImageGapChange"
+        @image-background-change="onImageBackgroundChange"
+        @crop-x-change="onCropXChange"
+        @crop-y-change="onCropYChange"
+        @crop-w-change="onCropWChange"
+        @crop-h-change="onCropHChange"
+        @concat-prefer-copy-change="onConcatPreferCopyChange"
+        @compose-intro-path-change="onComposeIntroPathChange"
+        @compose-intro-duration-change="onComposeIntroDurationChange"
+        @compose-outro-path-change="onComposeOutroPathChange"
+        @compose-outro-duration-change="onComposeOutroDurationChange"
+        @compose-overlay-path-change="onComposeOverlayPathChange"
+        @compose-overlay-position-change="onComposeOverlayPositionChange"
+        @compose-overlay-opacity-change="onComposeOverlayOpacityChange"
+        @compose-overlay-scale-percent-change="onComposeOverlayScalePercentChange"
+        @compose-overlay-margin-change="onComposeOverlayMarginChange"
+        @compose-overlay-start-sec-change="onComposeOverlayStartSecChange"
+        @compose-overlay-end-sec-change="onComposeOverlayEndSecChange"
+        @compose-fit-intro-outro-change="onComposeFitIntroOutroChange"
+        @select-compose-intro-image="onSelectComposeIntroImage"
+        @select-compose-outro-image="onSelectComposeOutroImage"
+        @select-compose-overlay-image="onSelectComposeOverlayImage"
+        @scale-mode-change="onScaleModeChange"
+        @out-width-change="onOutWidthChange"
+        @out-height-change="onOutHeightChange"
+        @aspect-ratio-change="onAspectRatioChange"
+        @scale-pad-change="onScalePadChange"
     />
 
     <div class="workspace">
       <DropZone
           :compact="tasks.length > 0"
           :dragging="dragging"
+          :task-mode="taskMode"
           @click="onSelectFiles"
       />
 

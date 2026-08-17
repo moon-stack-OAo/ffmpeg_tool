@@ -8,6 +8,7 @@ import type {
   FfmpegStatus,
   ImageEngineId,
   ImageEngineStatus,
+  LanStatus,
   ThemeMode
 } from '@shared/types'
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
@@ -35,6 +36,8 @@ const props = defineProps<{
   isPackaged: boolean
   appInfo: AppInfo | null
   updateChecking: boolean
+  lanStatus: LanStatus | null
+  lanSaving: boolean
 }>()
 
 const emit = defineEmits<{
@@ -57,16 +60,106 @@ const emit = defineEmits<{
   clearStoredTasks: []
   resetSettings: []
   checkUpdate: []
+  refreshLanStatus: []
+  saveLanConfig: [
+    config: {
+      enabled?: boolean
+      port?: number
+      username?: string
+      password?: string
+    }
+  ]
 }>()
 
 const activeTab = ref('general')
 
+/** 远程访问表单（本地编辑，点保存后提交） */
+const lanEnabled = ref(false)
+const lanPort = ref(17890)
+const lanUsername = ref('admin')
+const lanPassword = ref('')
+const lanPassword2 = ref('')
+
+function syncLanFormFromProps(): void {
+  const s = props.lanStatus
+  if (!s) return
+  lanEnabled.value = s.enabled
+  lanPort.value = s.port || 17890
+  lanUsername.value = s.username || 'admin'
+  lanPassword.value = ''
+  lanPassword2.value = ''
+}
+
 watch(
   () => props.visible,
   (v) => {
-    if (v) activeTab.value = 'general'
+    if (v) {
+      activeTab.value = 'general'
+      syncLanFormFromProps()
+      emit('refreshLanStatus')
+    }
   }
 )
+
+watch(
+  () => props.lanStatus,
+  () => {
+    if (props.visible) syncLanFormFromProps()
+  }
+)
+
+function onLanToggle(v: string | number | boolean): void {
+  const enabled = Boolean(v)
+  // 开启时若无密码，提示先填密码再保存
+  if (enabled && !props.lanStatus?.hasPassword && !lanPassword.value) {
+    lanEnabled.value = false
+    ElMessage.warning('首次开启请先设置密码，再点击「保存远程设置」')
+    return
+  }
+  lanEnabled.value = enabled
+  emit('saveLanConfig', {
+    enabled,
+    port: lanPort.value,
+    username: lanUsername.value,
+    ...(lanPassword.value ? { password: lanPassword.value } : {})
+  })
+}
+
+function onSaveLan(): void {
+  if (lanPassword.value || lanPassword2.value) {
+    if (lanPassword.value.length < 4) {
+      ElMessage.warning('密码至少 4 位')
+      return
+    }
+    if (lanPassword.value !== lanPassword2.value) {
+      ElMessage.warning('两次密码不一致')
+      return
+    }
+  }
+  if (lanEnabled.value && !props.lanStatus?.hasPassword && !lanPassword.value) {
+    ElMessage.warning('开启远程访问前请设置密码')
+    return
+  }
+  const port = Math.max(1024, Math.min(65535, Math.floor(Number(lanPort.value) || 17890)))
+  lanPort.value = port
+  emit('saveLanConfig', {
+    enabled: lanEnabled.value,
+    port,
+    username: lanUsername.value.trim() || 'admin',
+    ...(lanPassword.value ? { password: lanPassword.value } : {})
+  })
+  lanPassword.value = ''
+  lanPassword2.value = ''
+}
+
+async function copyLanUrl(url: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('已复制访问地址')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
 
 async function confirmClearTasks(): Promise<void> {
   try {
@@ -342,6 +435,127 @@ function onPathKeydown(e: KeyboardEvent): void {
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="远程访问" name="lan" lazy>
+        <div class="setting-pane">
+          <p class="setting-hint lan-intro">
+            开启后，同一局域网内可用浏览器访问本机服务，登录后上传任务并下载结果。编码器、水印、并发等仍使用本机设置。
+          </p>
+          <div class="setting-row">
+            <span class="setting-label">允许远程访问</span>
+            <el-switch
+              :model-value="lanEnabled"
+              :disabled="lanSaving"
+              size="small"
+              @change="onLanToggle"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">服务状态</span>
+            <el-tag
+              :type="lanStatus?.running ? 'success' : lanStatus?.error ? 'danger' : 'info'"
+              effect="plain"
+              size="small"
+            >
+              {{
+                lanStatus?.running
+                  ? '运行中'
+                  : lanStatus?.enabled
+                    ? lanStatus?.error || '未运行'
+                    : '已关闭'
+              }}
+            </el-tag>
+          </div>
+          <div v-if="lanStatus?.error" class="setting-row">
+            <span class="setting-label" />
+            <span class="setting-error">{{ lanStatus.error }}</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">端口</span>
+            <el-input-number
+              v-model="lanPort"
+              :min="1024"
+              :max="65535"
+              :step="1"
+              size="small"
+              controls-position="right"
+              class="w-port"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">用户名</span>
+            <el-input
+              v-model="lanUsername"
+              size="small"
+              class="bin-dir-input"
+              maxlength="64"
+              placeholder="admin"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">新密码</span>
+            <el-input
+              v-model="lanPassword"
+              type="password"
+              size="small"
+              class="bin-dir-input"
+              show-password
+              :placeholder="lanStatus?.hasPassword ? '留空则不修改' : '首次开启必填'"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">确认密码</span>
+            <el-input
+              v-model="lanPassword2"
+              type="password"
+              size="small"
+              class="bin-dir-input"
+              show-password
+              placeholder="再次输入新密码"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">密码</span>
+            <span class="setting-value">
+              {{ lanStatus?.hasPassword ? '已设置（哈希存储）' : '未设置' }}
+            </span>
+          </div>
+          <div class="setting-row actions">
+            <el-button
+              size="small"
+              type="primary"
+              :loading="lanSaving"
+              @click="onSaveLan"
+            >
+              保存远程设置
+            </el-button>
+            <el-button size="small" :disabled="lanSaving" @click="emit('refreshLanStatus')">
+              刷新状态
+            </el-button>
+          </div>
+          <div v-if="lanStatus?.urls?.length" class="setting-divider" />
+          <div v-if="lanStatus?.urls?.length" class="setting-row">
+            <span class="setting-label">本机地址</span>
+            <div class="lan-urls">
+              <button
+                v-for="url in lanStatus.urls"
+                :key="url"
+                type="button"
+                class="setting-value path-copy-btn lan-url-btn"
+                :title="'点击复制 ' + url"
+                @click="copyLanUrl(url)"
+              >
+                {{ url }}
+              </button>
+            </div>
+          </div>
+          <p class="setting-hint">
+            仅建议在受信局域网使用；关闭远程或修改密码将立即清除浏览器会话。
+          </p>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="数据" name="data" lazy>
         <div class="setting-pane">
           <div class="setting-row">
@@ -548,5 +762,27 @@ function onPathKeydown(e: KeyboardEvent): void {
 .setting-row.actions {
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.lan-intro {
+  white-space: normal;
+  line-height: 1.5;
+  margin: 0 0 var(--space-1);
+}
+
+.w-port {
+  width: 140px;
+}
+
+.lan-urls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lan-url-btn {
+  width: 100%;
 }
 </style>

@@ -13,6 +13,10 @@ asarUnpack:
   - node_modules/@img/**
 # 托盘/窗口运行时图标（打包后位于 process.resourcesPath/icons）
 extraResources:
+  # 局域网远程简易 Web（打包后位于 process.resourcesPath/lan-web）
+  - from: electron/main/lanServer/public
+    to: lan-web
+  # 托盘/窗口运行时图标（打包后位于 process.resourcesPath/icons）
   - from: resources
     to: icons
     filter:

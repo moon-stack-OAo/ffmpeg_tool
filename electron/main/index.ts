@@ -1,4 +1,14 @@
-import {app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray} from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  screen,
+  shell,
+  Tray
+} from 'electron'
 import {basename, dirname, extname, join} from 'path'
 import {existsSync, statSync} from 'fs'
 import type {
@@ -211,18 +221,45 @@ function handleCloseRequest(): void {
   }
 }
 
+/** 设计默认尺寸；不超过当前显示器工作区，避免 macOS 最大化/缩放被 min 尺寸卡住 */
+function resolveWindowBounds(): {
+  width: number
+  height: number
+  minWidth: number
+  minHeight: number
+} {
+  const { width: aw, height: ah } = screen.getPrimaryDisplay().workAreaSize
+  // 略留边，避免贴满工作区时系统缩放异常
+  const maxW = Math.max(800, aw)
+  const maxH = Math.max(600, ah)
+  const designW = 1360
+  const designH = 900
+  const width = Math.min(designW, maxW)
+  const height = Math.min(designH, maxH)
+  // 最小尺寸不超过工作区，否则 maximize 在小屏 Mac 上会失败或裁切
+  const minWidth = Math.min(1100, width, maxW)
+  const minHeight = Math.min(720, height, maxH)
+  return { width, height, minWidth, minHeight }
+}
+
 function createWindow(): void {
   const icon = resolveWindowIcon()
+  const bounds = resolveWindowBounds()
+  const isMac = process.platform === 'darwin'
   mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 900,
-    minWidth: 1360,
-    minHeight: 900,
-    resizable: false,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: bounds.minWidth,
+    minHeight: bounds.minHeight,
+    // macOS 上 resizable:false 会导致绿键最大化/缩放异常；允许缩放但受 min 约束
+    resizable: true,
     maximizable: true,
+    fullscreenable: true,
     show: false,
     title: PRODUCT_NAME,
     frame: false,
+    // macOS：hidden 标题栏配合自定义 TitleBar，避免系统栏与最大化区域冲突
+    ...(isMac ? { titleBarStyle: 'hidden' as const } : {}),
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
     ...(icon ? { icon } : {}),
@@ -234,18 +271,30 @@ function createWindow(): void {
     }
   })
 
+  // 隐藏 macOS 原生红绿灯，统一用自定义按钮（frame:false + titleBarStyle 时仍可能露出）
+  if (isMac) {
+    try {
+      mainWindow.setWindowButtonVisibility(false)
+    } catch {
+      // ignore
+    }
+  }
+
   taskQueue.setWindow(mainWindow)
 
   const sendMaximized = (): void => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(
-        IpcChannels.WINDOW_MAXIMIZED_CHANGED,
-        mainWindow.isMaximized()
-      )
+      // 全屏也视为「最大化」态，便于标题栏还原图标
+      const maximized =
+        mainWindow.isMaximized() || mainWindow.isFullScreen()
+      mainWindow.webContents.send(IpcChannels.WINDOW_MAXIMIZED_CHANGED, maximized)
     }
   }
   mainWindow.on('maximize', sendMaximized)
   mainWindow.on('unmaximize', sendMaximized)
+  mainWindow.on('enter-full-screen', sendMaximized)
+  mainWindow.on('leave-full-screen', sendMaximized)
+  mainWindow.on('resize', sendMaximized)
 
   mainWindow.on('close', (e) => {
     if (allowQuit) return
@@ -663,6 +712,11 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannels.WINDOW_MAXIMIZE, async () => {
     if (!mainWindow) return false
+    // macOS 绿键可能进全屏；标题栏按钮统一：最大化 ↔ 还原
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false)
+      return false
+    }
     if (mainWindow.isMaximized()) {
       mainWindow.unmaximize()
       return false
@@ -676,7 +730,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IpcChannels.WINDOW_IS_MAXIMIZED, async () => {
-    return mainWindow?.isMaximized() ?? false
+    if (!mainWindow) return false
+    return mainWindow.isMaximized() || mainWindow.isFullScreen()
   })
 
   ipcMain.handle(

@@ -1,6 +1,6 @@
 {
   "name": "qingying",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "轻影 — 本地视频压缩与音频抽取",
   "main": "./out/main/index.js",
   "author": "moon-stack-OAo",

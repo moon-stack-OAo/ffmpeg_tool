@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>轻影 · 远程访问</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 登录 -->
+    <section id="view-login" class="view">
+      <div class="card login-card">
+        <div class="brand">
+          <div class="brand-mark">轻</div>
+          <div>
+            <h1>轻影</h1>
+            <p class="muted">局域网远程压缩</p>
+          </div>
+        </div>
+        <form id="login-form">
+          <label>
+            <span>用户名</span>
+            <input id="login-user" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="login-pass" type="password" autocomplete="current-password" required />
+          </label>
+          <p id="login-error" class="error" hidden></p>
+          <button type="submit" class="btn primary" id="login-btn">登录</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 主界面 -->
+    <section id="view-main" class="view view-main" hidden>
+      <div class="main-bg" aria-hidden="true"></div>
+      <header class="topbar">
+        <div class="brand-inline">
+          <span class="brand-mark sm">轻</span>
+          <div class="brand-text">
+            <span class="brand-title">轻影远程</span>
+            <span class="brand-sub">局域网投递 · 压缩 · 下载</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="whoami" class="user-chip"></span>
+          <button type="button" class="btn ghost" id="btn-logout">退出</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <!-- 顶栏：标题 + 统计 -->
+        <div class="workbench-header">
+          <div class="page-intro">
+            <h1 class="page-title">工作台</h1>
+            <p class="page-desc">上传后由公共机排队处理，完成后可下载</p>
+          </div>
+          <div class="stat-row" id="stat-row">
+            <div class="stat-chip">
+              <span class="stat-num" id="stat-total">0</span>
+              <span class="stat-label">全部</span>
+            </div>
+            <div class="stat-chip is-run">
+              <span class="stat-num" id="stat-active">0</span>
+              <span class="stat-label">进行中</span>
+            </div>
+            <div class="stat-chip is-ok">
+              <span class="stat-num" id="stat-done">0</span>
+              <span class="stat-label">已完成</span>
+            </div>
+            <div class="stat-chip is-fail">
+              <span class="stat-num" id="stat-fail">0</span>
+              <span class="stat-label">失败</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 双栏：左投递 / 右队列 -->
+        <div class="workbench">
+          <aside class="workbench-side">
+            <div class="card card-upload">
+              <div class="card-head">
+                <div class="card-title-wrap">
+                  <span class="card-icon" aria-hidden="true">↑</span>
+                  <div>
+                    <h2>投递任务</h2>
+                    <p class="card-sub">选择文件与参数</p>
+                  </div>
+                </div>
+              </div>
+              <form id="upload-form" class="upload-form">
+                <label class="dropzone" id="dropzone">
+                  <input
+                    id="file-input"
+                    type="file"
+                    accept="video/*,audio/*,.mp4,.mkv,.mov,.avi,.webm,.mp3,.m4a,.wav"
+                    required
+                  />
+                  <div class="dropzone-inner">
+                    <div class="dropzone-icon" aria-hidden="true">
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                      </svg>
+                    </div>
+                    <div class="dropzone-text">
+                      <span id="file-name" class="file-name">点击或拖拽文件到此处</span>
+                      <span class="file-hint">视频 / 音频 · 单文件</span>
+                    </div>
+                  </div>
+                </label>
+
+                <div class="opts-block">
+                  <div class="opts-label">处理参数</div>
+                  <div class="grid">
+                    <label>
+                      <span>模式</span>
+                      <select id="opt-mode">
+                        <option value="compress">视频压缩</option>
+                        <option value="audio">仅抽取音频</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>预设</span>
+                      <select id="opt-preset">
+                        <option value="standard">标准压缩</option>
+                        <option value="archive">高清存档</option>
+                        <option value="social">微信/社交</option>
+                        <option value="custom">自定义</option>
+                      </select>
+                    </label>
+                    <label id="wrap-format">
+                      <span>视频格式</span>
+                      <select id="opt-format">
+                        <option value="mp4">MP4</option>
+                        <option value="mkv">MKV</option>
+                        <option value="mov">MOV</option>
+                        <option value="webm">WebM</option>
+                      </select>
+                    </label>
+                    <label id="wrap-maxedge">
+                      <span>最长边</span>
+                      <input
+                        id="opt-maxedge"
+                        type="number"
+                        inputmode="numeric"
+                        min="0"
+                        max="7680"
+                        step="1"
+                        value="0"
+                        placeholder="0"
+                      />
+                    </label>
+                    <label id="wrap-aformat" hidden>
+                      <span>音频格式</span>
+                      <select id="opt-aformat">
+                        <option value="m4a">M4A</option>
+                        <option value="mp3">MP3</option>
+                        <option value="opus">Opus</option>
+                      </select>
+                    </label>
+                    <label id="wrap-abitrate" hidden>
+                      <span>音频码率</span>
+                      <select id="opt-abitrate">
+                        <option value="128k">128k</option>
+                        <option value="192k" selected>192k</option>
+                        <option value="256k">256k</option>
+                        <option value="320k">320k</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p id="preset-hint" class="opts-hint muted"></p>
+                </div>
+
+                <!-- 自定义预设：少量高级参数 -->
+                <div id="custom-opts" class="opts-block opts-custom" hidden>
+                  <div class="opts-label">自定义参数</div>
+                  <div class="grid">
+                    <label id="wrap-crf">
+                      <span>CRF 质量（越小越高清）</span>
+                      <input
+                        id="opt-crf"
+                        type="number"
+                        inputmode="numeric"
+                        min="0"
+                        max="51"
+                        step="1"
+                        value="23"
+                        placeholder="23"
+                      />
+                    </label>
+                    <label id="wrap-target">
+                      <span>目标体积 MB（0=不限制）</span>
+                      <input
+                        id="opt-target"
+                        type="number"
+                        inputmode="numeric"
+                        min="0"
+                        max="10240"
+                        step="1"
+                        value="0"
+                        placeholder="0"
+                      />
+                    </label>
+                  </div>
+                  <p class="opts-hint muted">
+                    CRF 建议 18–28；目标体积与 CRF 二选一优先用目标体积估算码率。编码器 / 水印等仍用本机设置。
+                  </p>
+                </div>
+
+                <p id="upload-error" class="error banner-error" hidden></p>
+                <p id="upload-hint" class="muted upload-hint"></p>
+                <button type="submit" class="btn primary btn-submit" id="upload-btn">
+                  上传并开始
+                </button>
+                <div id="upload-progress" class="progress-bar" hidden>
+                  <div id="upload-progress-inner" class="progress-inner"></div>
+                </div>
+              </form>
+            </div>
+          </aside>
+
+          <section class="workbench-main">
+            <div class="card card-tasks">
+              <div class="card-head">
+                <div class="card-title-wrap">
+                  <span class="card-icon card-icon-list" aria-hidden="true">☰</span>
+                  <div>
+                    <h2>任务队列</h2>
+                    <p class="card-sub">自动刷新 · 完成后下载</p>
+                  </div>
+                </div>
+                <button type="button" class="btn ghost btn-refresh" id="btn-refresh">刷新</button>
+              </div>
+              <div class="table-wrap">
+                <table class="task-table">
+                  <thead>
+                    <tr>
+                      <th>文件</th>
+                      <th>状态</th>
+                      <th>进度</th>
+                      <th>体积</th>
+                      <th class="col-action">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="task-body">
+                    <tr class="empty-row">
+                      <td colspan="5">
+                        <div class="empty-state">
+                          <div class="empty-icon" aria-hidden="true">◇</div>
+                          <p>暂无任务</p>
+                          <span class="muted">从左侧投递文件后显示在这里</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </section>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

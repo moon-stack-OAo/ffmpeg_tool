@@ -555,6 +555,8 @@ export const IpcChannels = {
   UPDATE_GET_VERSION: 'update:get-version',
   UPDATE_CHECK: 'update:check',
   UPDATE_DOWNLOAD: 'update:download',
+  /** 取消正在下载的更新 */
+  UPDATE_CANCEL_DOWNLOAD: 'update:cancel-download',
   UPDATE_INSTALL: 'update:install',
   /** 打开文件或目录 */
   OPEN_PATH: 'shell:open-path',
@@ -812,13 +814,23 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<AppVersionInfo>
   checkForUpdates: () => Promise<UpdateStatusPayload>
   downloadUpdate: () => Promise<{ ok: boolean; error?: string }>
+  /** 取消正在下载的更新 */
+  cancelUpdateDownload: () => Promise<{ ok: boolean; error?: string }>
   installUpdate: () => Promise<{ ok: boolean; error?: string }>
   /** 用系统默认程序打开文件或目录 */
   openPath: (p: string) => Promise<{ ok: boolean; error?: string }>
   /** 在资源管理器中显示并选中 */
   showItemInFolder: (p: string) => Promise<{ ok: boolean }>
   /** 修改用户数据目录；restart=true 表示需重启生效 */
-  setDataDir: (dir: string) => Promise<{ ok: boolean; error?: string; restart?: boolean }>
+  setDataDir: (dir: string) => Promise<{
+    ok: boolean
+    error?: string
+    restart?: boolean
+    /** 已复制到新目录的相对路径 */
+    migrated?: string[]
+    migrateSkipped?: string[]
+    migrateErrors?: string[]
+  }>
   /** 重启应用（用于数据目录等更改生效） */
   relaunchApp: () => Promise<void>
   /** 窗口最小化 */

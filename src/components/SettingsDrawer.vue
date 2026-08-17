@@ -361,6 +361,9 @@ function onPathKeydown(e: KeyboardEvent): void {
             <el-button size="small" @click="emit('openAppData')">打开数据目录</el-button>
             <el-button size="small" @click="emit('changeDataDir')">修改数据目录…</el-button>
           </div>
+          <p class="setting-hint">
+            修改时会将设置、任务列表等迁移到新目录（不覆盖已有文件；缓存目录不迁移；原目录保留）。
+          </p>
           <div class="setting-divider" />
           <div class="setting-row actions">
             <el-button size="small" plain type="danger" @click="confirmClearTasks">

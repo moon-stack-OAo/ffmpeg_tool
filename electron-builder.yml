@@ -70,9 +70,13 @@ mac:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  # false=安装过程不自动建桌面图标；完成页由 build/installer.nsh 勾选创建
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
   shortcutName: 轻影
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
+  # 完成页「创建桌面快捷方式」勾选（默认勾选）
+  include: build/installer.nsh
   # 便于 electron-updater 差分/覆盖安装
   differentialPackage: true

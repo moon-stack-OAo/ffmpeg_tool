@@ -16,7 +16,6 @@ export function useUpdater() {
     updateInfo.value = {
       ...prev,
       ...payload,
-      // 进度事件不带 version，保留 available 时的远端版本
       version: payload.version ?? prev.version,
       releaseNotes: payload.releaseNotes ?? prev.releaseNotes,
       currentVersion: payload.currentVersion || prev.currentVersion || appVersion.value
@@ -25,15 +24,18 @@ export function useUpdater() {
     updateDownloading.value = payload.state === 'downloading'
 
     if (payload.state === 'available') {
-      updateDialogVisible.value = true
+      // 取消下载回到 available 时保持弹窗打开
+      if (payload.message?.includes('取消') && updateDialogVisible.value) {
+        ElMessage.info(payload.message)
+      } else {
+        updateDialogVisible.value = true
+      }
     } else if (payload.state === 'downloaded') {
       updateDialogVisible.value = true
       ElMessage.success(payload.message || '更新已下载')
     } else if (payload.state === 'error') {
-      // 手动检查时弹出；启动静默检查只记状态
-      if (updateDialogVisible.value) {
-        ElMessage.error(payload.message || '检查更新失败')
-      }
+      updateDialogVisible.value = true
+      ElMessage.error(payload.message || '更新失败')
     } else if (payload.state === 'not-available' && updateDialogVisible.value) {
       ElMessage.success(payload.message || '已是最新版本')
     }
@@ -54,7 +56,6 @@ export function useUpdater() {
     updateChecking.value = true
     try {
       const res = await window.electronAPI.checkForUpdates()
-      // 事件会覆盖最终状态；此处兜底
       if (res?.state && res.state !== 'checking') {
         applyUpdateStatus(res)
       }
@@ -68,10 +69,45 @@ export function useUpdater() {
 
   async function onDownloadUpdate(): Promise<void> {
     updateDownloading.value = true
-    const res = await window.electronAPI.downloadUpdate()
-    if (!res.ok) {
+    try {
+      const res = await window.electronAPI.downloadUpdate()
+      if (!res.ok) {
+        updateDownloading.value = false
+        // 取消不弹 error（主进程已推 available + message）
+        if (res.error && !res.error.includes('取消')) {
+          ElMessage.error(res.error)
+          if (updateInfo.value.state !== 'error') {
+            applyUpdateStatus({
+              state: 'error',
+              message: res.error,
+              version: updateInfo.value.version,
+              currentVersion: appVersion.value
+            })
+          }
+        }
+      }
+    } catch (err) {
       updateDownloading.value = false
-      ElMessage.error(res.error || '下载失败')
+      const message = err instanceof Error ? err.message : String(err)
+      ElMessage.error(message || '下载失败')
+      applyUpdateStatus({
+        state: 'error',
+        message: message || '下载失败',
+        version: updateInfo.value.version,
+        currentVersion: appVersion.value
+      })
+    }
+  }
+
+  async function onCancelDownload(): Promise<void> {
+    try {
+      const res = await window.electronAPI.cancelUpdateDownload()
+      if (!res.ok) {
+        ElMessage.warning(res.error || '无法取消下载')
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      ElMessage.error(message || '取消下载失败')
     }
   }
 
@@ -100,6 +136,7 @@ export function useUpdater() {
     loadVersion,
     onCheckUpdate,
     onDownloadUpdate,
+    onCancelDownload,
     onInstallUpdate,
     subscribe
   }

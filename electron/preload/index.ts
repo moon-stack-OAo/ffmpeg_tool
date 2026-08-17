@@ -247,6 +247,7 @@ const api: ElectronAPI = {
   getAppVersion: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_VERSION),
   checkForUpdates: () => ipcRenderer.invoke(IpcChannels.UPDATE_CHECK),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD),
+  cancelUpdateDownload: () => ipcRenderer.invoke(IpcChannels.UPDATE_CANCEL_DOWNLOAD),
   installUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL),
   openPath: (p: string) => ipcRenderer.invoke(IpcChannels.OPEN_PATH, p),
   showItemInFolder: (p: string) =>

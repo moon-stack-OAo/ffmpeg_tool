@@ -153,6 +153,7 @@ const {
   loadVersion,
   onCheckUpdate,
   onDownloadUpdate,
+  onCancelDownload,
   onInstallUpdate,
   subscribe: subscribeUpdater
 } = useUpdater()
@@ -421,10 +422,20 @@ async function onChangeDataDir(): Promise<void> {
     if (appInfo.value) {
       appInfo.value = { ...appInfo.value, userDataPath: res.path }
     }
-    ElMessage.success('数据目录已更新，重启后完全生效')
+    const migrated = r.migrated?.length ?? 0
+    const migrateErr = r.migrateErrors?.length ?? 0
+    const tip =
+      migrated > 0
+        ? `已迁移 ${migrated} 项到新目录（缓存类目录已跳过）`
+        : '数据目录已更新（无可迁移文件或目标已存在同名文件）'
+    if (migrateErr > 0) {
+      ElMessage.warning(`${tip}；${migrateErr} 项迁移失败`)
+    } else {
+      ElMessage.success(`${tip}，重启后完全生效`)
+    }
     try {
       await ElMessageBox.confirm(
-        '数据目录已切换，部分配置需重启应用后完全生效。是否立即重启？',
+        '数据目录已切换，设置与任务列表会尽量迁移到新目录（不覆盖已有文件；Chromium 缓存不迁移）。是否立即重启？',
         '重启应用',
         {
           type: 'info',
@@ -547,6 +558,7 @@ async function onResetSettings(): Promise<void> {
         :update-info="updateInfo"
         @check-update="onCheckUpdate"
         @download-update="onDownloadUpdate"
+        @cancel-download="onCancelDownload"
         @install-update="onInstallUpdate"
     />
 

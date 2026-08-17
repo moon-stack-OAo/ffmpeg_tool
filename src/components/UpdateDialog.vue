@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   checkUpdate: []
   downloadUpdate: []
+  cancelDownload: []
   installUpdate: []
 }>()
 
@@ -47,7 +48,7 @@ const statusMeta = computed(() => {
     case 'not-available':
       return {type: 'success' as const, label: '已是最新版本', icon: CircleCheckFilled}
     case 'error':
-      return {type: 'danger' as const, label: '检查更新失败', icon: WarningFilled}
+      return {type: 'danger' as const, label: '更新失败', icon: WarningFilled}
     default:
       return {type: 'info' as const, label: '检查更新', icon: InfoFilled}
   }
@@ -78,7 +79,7 @@ const idleTitle = computed(() => {
     case 'not-available':
       return '已是最新版本'
     case 'error':
-      return '检查更新失败'
+      return '更新失败'
     default:
       return !props.isPackaged ? '开发模式' : '软件更新'
   }
@@ -269,7 +270,7 @@ function inlineHtml(text: string): string {
           class="update-msg"
           :class="{
             'is-error': state === 'error',
-            'is-ok': state === 'downloaded'
+            'is-ok': state === 'downloaded' || state === 'available'
           }"
         >
           {{ updateInfo.message }}
@@ -327,36 +328,58 @@ function inlineHtml(text: string): string {
 
     <template #footer>
       <div class="update-footer">
-        <el-button class="update-btn-ghost" @click="close">关闭</el-button>
         <el-button
-            v-if="state === 'available'"
-            :loading="updateDownloading"
-            type="primary"
-            class="update-btn-primary"
-            @click="emit('downloadUpdate')"
+          v-if="state !== 'downloading'"
+          class="update-btn-ghost"
+          @click="close"
+        >
+          关闭
+        </el-button>
+        <el-button
+          v-if="state === 'downloading'"
+          class="update-btn-ghost"
+          @click="emit('cancelDownload')"
+        >
+          取消下载
+        </el-button>
+        <el-button
+          v-if="state === 'available'"
+          :loading="updateDownloading"
+          type="primary"
+          class="update-btn-primary"
+          @click="emit('downloadUpdate')"
         >
           <el-icon v-if="!updateDownloading" class="btn-icon">
-            <Download/>
+            <Download />
           </el-icon>
           下载更新
         </el-button>
         <el-button
-            v-if="state === 'downloaded'"
-            type="success"
-            class="update-btn-success"
-            @click="emit('installUpdate')"
+          v-if="state === 'downloaded'"
+          type="success"
+          class="update-btn-success"
+          @click="emit('installUpdate')"
         >
           <el-icon class="btn-icon">
-            <Refresh/>
+            <Refresh />
           </el-icon>
           重启并安装
         </el-button>
         <el-button
-            v-if="state === 'error' || state === 'not-available' || state === 'idle'"
-            :loading="updateChecking"
-            type="primary"
-            class="update-btn-primary"
-            @click="emit('checkUpdate')"
+          v-if="state === 'error'"
+          type="primary"
+          class="update-btn-primary"
+          :disabled="!updateInfo.version"
+          @click="emit('downloadUpdate')"
+        >
+          重试下载
+        </el-button>
+        <el-button
+          v-if="state === 'error' || state === 'not-available' || state === 'idle'"
+          :loading="updateChecking"
+          :type="state === 'error' ? 'default' : 'primary'"
+          :class="state === 'error' ? '' : 'update-btn-primary'"
+          @click="emit('checkUpdate')"
         >
           重新检查
         </el-button>

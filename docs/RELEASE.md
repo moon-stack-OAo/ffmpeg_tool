@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-- **1.0.0**：轻影首发（见 `CHANGELOG.md` / `package.json` 的 `version`）
+- **1.1.0**：见 `CHANGELOG.md` / `package.json` 的 `version`
 - 未完成项仅保留在 `[Unreleased]` 计划（如代码签名 / 公证）
 
 ## 步骤

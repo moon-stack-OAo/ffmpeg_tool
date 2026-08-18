@@ -111,6 +111,8 @@ export function initAutoUpdater(win: BrowserWindow): void {
   autoUpdater.autoDownload = false
   // 仅用户点击「重启并安装」时安装，普通退出不装
   autoUpdater.autoInstallOnAppQuit = false
+  // 始终全量下载，避免差分失败后出现「先几 MB 再重下」双段进度
+  autoUpdater.disableDifferentialDownload = true
   autoUpdater.allowPrerelease = false
   autoUpdater.allowDowngrade = false
 

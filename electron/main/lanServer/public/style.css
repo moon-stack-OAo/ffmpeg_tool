@@ -1,11 +1,18 @@
-/* 对齐桌面端暗色：扁平精修、层次清晰、控件不发黑 */
-:root {
+/* 对齐桌面端：默认暗色，支持 data-theme=light/dark */
+:root,
+html[data-theme="dark"] {
   --bg: #0f1115;
   --bg-elevated: #14171d;
   --panel: #1a1d24;
   --panel-elevated: #1e222b;
+  --panel-translucent: rgba(26, 29, 36, 0.92);
+  --panel-stat: rgba(26, 29, 36, 0.88);
+  --login-card-bg: linear-gradient(180deg, rgba(30, 34, 43, 0.96), rgba(26, 29, 36, 0.98));
+  --topbar-bg: rgba(15, 17, 21, 0.78);
   --border: rgba(255, 255, 255, 0.12);
   --border-soft: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --border-login: rgba(255, 255, 255, 0.14);
   --fg: #e8eaed;
   --fg-secondary: #a0a7b4;
   --fg-muted: #6b7280;
@@ -28,8 +35,77 @@
   --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --control-bg: #22262f;
   --control-bg-hover: #272c36;
+  --btn-hover-bg: #252a35;
+  --ghost-hover-bg: rgba(255, 255, 255, 0.05);
+  --chip-bg: rgba(255, 255, 255, 0.04);
+  --surface-1: rgba(255, 255, 255, 0.02);
+  --surface-2: rgba(255, 255, 255, 0.03);
+  --surface-3: rgba(255, 255, 255, 0.035);
+  --surface-4: rgba(255, 255, 255, 0.05);
+  --surface-5: rgba(255, 255, 255, 0.06);
+  --track-bg: rgba(255, 255, 255, 0.06);
+  --thumb-fail-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  --thumb-ph-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  --stat-run-bg: linear-gradient(180deg, rgba(64, 158, 255, 0.1), rgba(26, 29, 36, 0.9));
+  --lightbox-backdrop: rgba(0, 0, 0, 0.72);
+  --lightbox-body-bg: rgba(0, 0, 0, 0.28);
+  --lightbox-spinner-border: rgba(255, 255, 255, 0.2);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23a0a7b4' d='M1.4 1.4L6 6l4.6-4.6L12 2.8 6 8.8 0 2.8z'/%3E%3C/svg%3E");
   --topbar-h: 54px;
   --focus-ring: 0 0 0 3px rgba(64, 158, 255, 0.22);
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f3f5f9;
+  --bg-elevated: #eef1f6;
+  --panel: #ffffff;
+  --panel-elevated: #ffffff;
+  --panel-translucent: rgba(255, 255, 255, 0.96);
+  --panel-stat: rgba(255, 255, 255, 0.92);
+  --login-card-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  --topbar-bg: rgba(243, 245, 249, 0.86);
+  --border: rgba(15, 23, 42, 0.1);
+  --border-soft: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --border-login: rgba(15, 23, 42, 0.12);
+  --fg: #303133;
+  --fg-secondary: #606266;
+  --fg-muted: #909399;
+  --primary: #409eff;
+  --primary-solid: #409eff;
+  --primary-hover: #66b1ff;
+  --primary-soft: rgba(64, 158, 255, 0.12);
+  --danger: #f56c6c;
+  --danger-soft: rgba(245, 108, 108, 0.1);
+  --ok: #67c23a;
+  --ok-soft: rgba(103, 194, 58, 0.1);
+  --warn: #e6a23c;
+  --warn-soft: rgba(230, 162, 60, 0.1);
+  --violet: #7c5cbf;
+  --violet-soft: rgba(124, 92, 191, 0.1);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.06);
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.03), 0 6px 16px rgba(15, 23, 42, 0.05);
+  --control-bg: #ffffff;
+  --control-bg-hover: #f5f7fa;
+  --btn-hover-bg: #f0f2f5;
+  --ghost-hover-bg: rgba(15, 23, 42, 0.05);
+  --chip-bg: rgba(15, 23, 42, 0.04);
+  --surface-1: rgba(15, 23, 42, 0.02);
+  --surface-2: rgba(15, 23, 42, 0.03);
+  --surface-3: rgba(15, 23, 42, 0.035);
+  --surface-4: rgba(15, 23, 42, 0.05);
+  --surface-5: rgba(15, 23, 42, 0.06);
+  --track-bg: rgba(15, 23, 42, 0.08);
+  --thumb-fail-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.02));
+  --thumb-ph-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.02));
+  --stat-run-bg: linear-gradient(180deg, rgba(64, 158, 255, 0.1), rgba(255, 255, 255, 0.92));
+  --lightbox-backdrop: rgba(15, 23, 42, 0.48);
+  --lightbox-body-bg: rgba(15, 23, 42, 0.06);
+  --lightbox-spinner-border: rgba(15, 23, 42, 0.16);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23909399' d='M1.4 1.4L6 6l4.6-4.6L12 2.8 6 8.8 0 2.8z'/%3E%3C/svg%3E");
+  --focus-ring: 0 0 0 3px rgba(64, 158, 255, 0.18);
+  color-scheme: light;
 }
 
 * {
@@ -117,8 +193,8 @@ body {
   width: 100%;
   max-width: 392px;
   padding: 30px 28px 28px;
-  background: linear-gradient(180deg, rgba(30, 34, 43, 0.96), rgba(26, 29, 36, 0.98));
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--login-card-bg);
+  border-color: var(--border-login);
   backdrop-filter: blur(8px);
 }
 
@@ -238,7 +314,7 @@ input::placeholder {
 
 input:hover,
 select:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--border-strong);
   background: var(--control-bg-hover);
 }
 
@@ -259,7 +335,7 @@ input[type="number"] {
   background: var(--control-bg) !important;
   background-image: none !important;
   border: 1px solid var(--border);
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 input[type="number"]::-webkit-outer-spin-button,
@@ -278,13 +354,13 @@ select {
   -webkit-appearance: none;
   appearance: none;
   background-color: var(--control-bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23a0a7b4' d='M1.4 1.4L6 6l4.6-4.6L12 2.8 6 8.8 0 2.8z'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 11px center;
   background-size: 10px 7px;
   padding-right: 28px;
   cursor: pointer;
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 .btn {
@@ -305,8 +381,8 @@ select {
 }
 
 .btn:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: #252a35;
+  border-color: var(--border-strong);
+  background: var(--btn-hover-bg);
 }
 
 .btn:active:not(:disabled) {
@@ -340,7 +416,7 @@ select {
 
 .btn.ghost:hover:not(:disabled) {
   color: var(--fg);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ghost-hover-bg);
 }
 
 .btn.sm {
@@ -358,6 +434,31 @@ select {
 .btn-logout {
   height: 32px;
   padding: 0 12px;
+}
+
+.btn-theme {
+  height: 32px;
+  width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-secondary);
+}
+
+.btn-theme:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.btn-theme .theme-icon {
+  width: 16px;
+  height: 16px;
+  display: none;
+}
+
+html[data-theme="dark"] .btn-theme .theme-icon-sun,
+html[data-theme="light"] .btn-theme .theme-icon-moon {
+  display: block;
 }
 
 /* —— 主界面 —— */
@@ -390,7 +491,7 @@ select {
   gap: 16px;
   padding: 0 22px;
   border-bottom: 1px solid var(--border-soft);
-  background: rgba(15, 17, 21, 0.78);
+  background: var(--topbar-bg);
   backdrop-filter: blur(14px) saturate(1.2);
 }
 
@@ -410,7 +511,7 @@ select {
   border-radius: 999px;
   font-size: 12px;
   color: var(--fg-secondary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chip-bg);
   border: 1px solid var(--border-soft);
 }
 
@@ -468,7 +569,7 @@ select {
   min-width: 72px;
   padding: 9px 13px;
   border-radius: 11px;
-  background: rgba(26, 29, 36, 0.88);
+  background: var(--panel-stat);
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
 }
@@ -489,7 +590,7 @@ select {
 
 .stat-chip.is-run {
   border-color: rgba(64, 158, 255, 0.22);
-  background: linear-gradient(180deg, rgba(64, 158, 255, 0.1), rgba(26, 29, 36, 0.9));
+  background: var(--stat-run-bg);
 }
 
 .stat-chip.is-run .stat-num {
@@ -559,7 +660,7 @@ select {
 .card-tasks {
   padding: 0;
   overflow: hidden;
-  background: rgba(26, 29, 36, 0.92);
+  background: var(--panel-translucent);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-soft);
 }
@@ -843,7 +944,7 @@ select {
   padding: 12px;
   border: 1px solid var(--border-soft);
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-1);
 }
 
 .opts-block[hidden],
@@ -909,7 +1010,7 @@ select {
 .progress-bar {
   margin-top: 10px;
   height: 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--track-bg);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -958,7 +1059,7 @@ select {
 }
 
 .task-table tbody tr:not(.empty-row):hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-3);
 }
 
 .task-table tbody td {
@@ -1005,7 +1106,7 @@ select {
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chip-bg);
   border: 1px solid var(--border-soft);
   display: block;
 }
@@ -1013,8 +1114,7 @@ select {
 .task-thumb-btn.is-fail .task-thumb {
   opacity: 0.35;
   object-fit: none;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  background: var(--thumb-fail-bg);
 }
 
 .task-thumb-ph {
@@ -1024,13 +1124,11 @@ select {
   border-radius: 8px;
   border: 1px solid var(--border-soft);
   flex-shrink: 0;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  background: var(--thumb-ph-bg);
 }
 
 .task-thumb-ph.is-audio {
-  background:
-    linear-gradient(145deg, rgba(230, 162, 60, 0.16), rgba(255, 255, 255, 0.03));
+  background: linear-gradient(145deg, rgba(230, 162, 60, 0.16), var(--surface-2));
   border-color: rgba(230, 162, 60, 0.22);
 }
 
@@ -1058,7 +1156,7 @@ body.lightbox-open {
   border: none;
   margin: 0;
   padding: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--lightbox-backdrop);
   cursor: pointer;
 }
 
@@ -1107,7 +1205,7 @@ body.lightbox-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--lightbox-body-bg);
   overflow: auto;
   padding: 16px;
 }
@@ -1127,7 +1225,7 @@ body.lightbox-open {
   width: 24px;
   height: 24px;
   margin: -12px 0 0 -12px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--lightbox-spinner-border);
   border-top-color: var(--primary-solid);
   border-radius: 50%;
   animation: thumb-lightbox-spin 0.8s linear infinite;
@@ -1178,7 +1276,7 @@ body.lightbox-open {
   font-size: 11px;
   font-weight: 650;
   color: var(--fg-secondary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-5);
   border: 1px solid var(--border-soft);
   width: fit-content;
   letter-spacing: 0.2px;
@@ -1227,7 +1325,7 @@ body.lightbox-open {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-4);
   white-space: nowrap;
 }
 
@@ -1301,7 +1399,7 @@ body.lightbox-open {
 .pct-track {
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--track-bg);
   overflow: hidden;
 }
 
@@ -1353,7 +1451,7 @@ body.lightbox-open {
   margin-bottom: 6px;
   font-size: 16px;
   color: var(--fg-muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-2);
   border: 1px dashed var(--border);
 }
 

@@ -67,8 +67,42 @@
   }
 
   const FILE_PLACEHOLDER = '点击或拖拽文件到此处'
+  const THEME_KEY = 'qy-lan-theme'
   let pollTimer = null
   let authenticated = false
+
+  function readStoredTheme() {
+    try {
+      const t = localStorage.getItem(THEME_KEY)
+      return t === 'light' || t === 'dark' ? t : 'dark'
+    } catch {
+      return 'dark'
+    }
+  }
+
+  function applyTheme(theme) {
+    const next = theme === 'light' ? 'light' : 'dark'
+    document.documentElement.setAttribute('data-theme', next)
+    try {
+      localStorage.setItem(THEME_KEY, next)
+    } catch {
+      /* ignore */
+    }
+    const btn = $('btn-theme')
+    if (btn) {
+      btn.setAttribute('aria-label', next === 'dark' ? '切换浅色主题' : '切换深色主题')
+      btn.title = next === 'dark' ? '切换到浅色' : '切换到深色'
+    }
+  }
+
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'
+    applyTheme(cur === 'dark' ? 'light' : 'dark')
+  }
+
+  applyTheme(readStoredTheme())
+  const btnTheme = $('btn-theme')
+  if (btnTheme) btnTheme.addEventListener('click', toggleTheme)
 
   function updateStats(tasks) {
     const list = tasks || []

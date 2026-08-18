@@ -1,9 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>轻影 · 远程访问</title>
+  <script>
+    ;(function () {
+      try {
+        var t = localStorage.getItem('qy-lan-theme')
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    })()
+  </script>
   <link href="/favicon.ico" rel="icon" sizes="any" />
   <link href="/favicon-32.png" rel="icon" sizes="32x32" type="image/png" />
   <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
@@ -70,6 +78,21 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button
+            id="btn-theme"
+            aria-label="切换浅色主题"
+            class="btn ghost btn-theme"
+            title="切换主题"
+            type="button"
+          >
+            <svg aria-hidden="true" class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M12 2.5v2.2M12 19.3v2.2M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <svg aria-hidden="true" class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none">
+              <path d="M19.5 13.2A7.5 7.5 0 1 1 10.8 4.5 6.2 6.2 0 0 0 19.5 13.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <span id="whoami" class="user-chip"></span>
           <button id="btn-logout" class="btn ghost btn-logout" type="button">退出</button>
         </div>

@@ -199,6 +199,9 @@ export function optionsSummary(task: CompressTask): string {
     if (o.crop && o.crop.w > 0 && o.crop.h > 0) {
       parts.push(`画面裁切: ${o.crop.w}×${o.crop.h}@${o.crop.x},${o.crop.y}`)
     }
+    if (o.mosaics?.length) {
+      parts.push(`打码区域: ${o.mosaics.length} 个`)
+    }
   }
 
   if (o.trimStart && o.trimStart > 0) parts.push(`裁剪起: ${o.trimStart}s`)

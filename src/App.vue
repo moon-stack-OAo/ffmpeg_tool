@@ -7,12 +7,14 @@ import type {
   ImageEngineStatus,
   LanStatus,
   MediaComposeOptions,
+  MosaicRegion,
   TaskMode,
   WatermarkPosition
 } from '@shared/types'
 import {IMAGE_EXTENSIONS} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
+import VideoMosaicDialog from './components/VideoMosaicDialog.vue'
 import DropZone from './components/DropZone.vue'
 import CloseConfirmDialog from './components/CloseConfirmDialog.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
@@ -362,6 +364,46 @@ const showCropComposeGlobalWarning = computed(() => {
 const cropComposeWarningText = computed(
   () => `当前裁切/混剪参数将应用于全部 ${pendingCount.value} 个待处理任务`
 )
+
+/** 打码规则仅属于当前选中的单个视频任务，不参与全局选项同步。 */
+const mosaicDialogOpen = ref(false)
+const mosaicEditable = computed(() => {
+  const task = selectedTask.value
+  return !!(
+    task &&
+    (task.status === 'pending' || task.status === 'failed') &&
+    task.options?.mode !== 'audio' &&
+    task.options?.mode !== 'image' &&
+    task.options?.mode !== 'image-crop' &&
+    task.options?.mode !== 'image-stitch' &&
+    task.options?.mode !== 'video-concat' &&
+    task.options?.mode !== 'media-compose' &&
+    task.inputPath
+  )
+})
+const mosaicVideoPath = computed(() =>
+  mosaicEditable.value ? selectedTask.value?.inputPath || '' : ''
+)
+const mosaicRegions = computed<MosaicRegion[]>(() =>
+  selectedTask.value?.options?.mosaics || []
+)
+
+function openMosaicEditor(): void {
+  if (!mosaicEditable.value) {
+    ElMessage.warning('请先选中一个待处理的视频压缩任务')
+    return
+  }
+  mosaicDialogOpen.value = true
+}
+
+function onMosaicConfirm(regions: MosaicRegion[]): void {
+  const task = selectedTask.value
+  if (!task || !mosaicEditable.value) return
+  updateTask(task.id, {
+    options: { ...task.options, mosaics: regions },
+    outputPath: ''
+  })
+}
 
 /** 可视化裁切预览：优先选中任务，否则第一个 pending/failed */
 const cropPreviewPath = computed(() => {
@@ -1040,6 +1082,7 @@ async function onResetSettings(): Promise<void> {
         :crop-w="cropW"
         :crop-h="cropH"
         :crop-preview-path="cropPreviewPath"
+        :mosaic-editable="mosaicEditable"
         :concat-prefer-copy="concatPreferCopy"
         :compose-intro-path="composeIntroPath"
         :compose-intro-duration="composeIntroDuration"
@@ -1061,6 +1104,7 @@ async function onResetSettings(): Promise<void> {
         :show-crop-compose-warning="showCropComposeGlobalWarning"
         :crop-compose-warning-text="cropComposeWarningText"
         @apply-to-pending="applyOptionsToPending"
+        @edit-mosaics="openMosaicEditor"
         @audio-bitrate-change="onAudioBitrateChange"
         @audio-format-change="onAudioFormatChange"
         @compat-profile-change="onCompatProfileChange"
@@ -1123,6 +1167,13 @@ async function onResetSettings(): Promise<void> {
         @out-height-change="onOutHeightChange"
         @aspect-ratio-change="onAspectRatioChange"
         @scale-pad-change="onScalePadChange"
+    />
+
+    <VideoMosaicDialog
+        v-model="mosaicDialogOpen"
+        :video-path="mosaicVideoPath"
+        :regions="mosaicRegions"
+        @confirm="onMosaicConfirm"
     />
 
     <div class="workspace">

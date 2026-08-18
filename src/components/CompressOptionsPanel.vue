@@ -125,6 +125,8 @@ const props = withDefaults(
     composeFitIntroOutro: boolean
     /** 可视化裁切预览路径（任务 inputPath，可空） */
     cropPreviewPath?: string
+    /** 是否存在可单独编辑的压缩任务 */
+    mosaicEditable?: boolean
     /** 多任务全局草稿下裁切/混剪危险提示 */
     showCropComposeWarning?: boolean
     cropComposeWarningText?: string
@@ -142,6 +144,7 @@ const props = withDefaults(
   }>(),
   {
     cropPreviewPath: '',
+    mosaicEditable: false,
     showCropComposeWarning: false,
     cropComposeWarningText: ''
   }
@@ -211,6 +214,7 @@ const emit = defineEmits<{
   aspectRatioChange: [v: AspectRatioId]
   scalePadChange: [v: ScalePadMode]
   applyToPending: []
+  editMosaics: []
 }>()
 
 /** 高级选项默认折叠 */
@@ -1582,6 +1586,21 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                 class="w-lg"
                 @change="(v: number | undefined) => emit('trimEndChange', typeof v === 'number' ? v : 0)"
               />
+            </div>
+          </div>
+
+          <div class="opt-row opt-row-wrap">
+            <div class="opt-item">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :disabled="!mosaicEditable"
+                @click="emit('editMosaics')"
+              >
+                视频打码
+              </el-button>
+              <span class="hint-inline">仅编辑当前选中的视频</span>
             </div>
           </div>
 

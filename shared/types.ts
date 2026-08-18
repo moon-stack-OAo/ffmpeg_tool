@@ -171,6 +171,8 @@ export interface CompressOptions {
   watermark?: WatermarkOptions
   /** 画面裁切（原图像素，旋转后坐标系） */
   crop?: { x: number; y: number; w: number; h: number }
+  /** 视频局部打码（原图像素，旋转/裁切后的坐标系） */
+  mosaics?: MosaicRegion[]
   /**
    * 图片处理参数（mode 为 image / image-crop / image-stitch 时用）
    */
@@ -193,6 +195,25 @@ export interface CompressOptions {
   concatPreferCopy?: boolean
   /** 图+视频混剪（mode=media-compose） */
   compose?: MediaComposeOptions
+}
+
+/** 单个视频局部打码规则 */
+export interface MosaicRegion {
+  /** 编辑器内的稳定标识 */
+  id: string
+  /** 起始时间（秒），0 表示从开头 */
+  startSec: number
+  /** 结束时间（秒），缺省或 0 表示到结尾 */
+  endSec?: number
+  /** 原视频像素坐标 */
+  x: number
+  y: number
+  w: number
+  h: number
+  /** pixelate=像素化；blur=高斯模糊 */
+  mode: 'pixelate' | 'blur'
+  /** 像素块边长或模糊强度，范围 2–128 */
+  strength: number
 }
 
 /** 图+视频混剪选项 */

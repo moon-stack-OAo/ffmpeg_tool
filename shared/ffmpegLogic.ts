@@ -5,6 +5,7 @@ import type {
   EncodePreset,
   EncoderDetectResult,
   EncoderId,
+  MosaicRegion,
   OutputFormat,
   ProgressPayload,
   ResolvedEncoder,
@@ -578,6 +579,112 @@ export function buildVideoFilter(options: CompressOptions): string | null {
   return parts.join(',')
 }
 
+/** 将打码规则规范为可安全写入 FFmpeg 表达式的整数值 */
+export function normalizeMosaicRegions(
+  mosaics?: MosaicRegion[] | null
+): MosaicRegion[] {
+  if (!Array.isArray(mosaics)) return []
+  const result: MosaicRegion[] = []
+  for (const item of mosaics) {
+    if (!item || typeof item !== 'object') continue
+    const x = Number(item.x)
+    const y = Number(item.y)
+    const w = Number(item.w)
+    const h = Number(item.h)
+    const startSec = Number(item.startSec)
+    const endRaw = item.endSec == null ? 0 : Number(item.endSec)
+    const strength = Number(item.strength)
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(w) ||
+      !Number.isFinite(h) ||
+      !Number.isFinite(startSec) ||
+      !Number.isFinite(endRaw) ||
+      !Number.isFinite(strength) ||
+      x < 0 ||
+      y < 0 ||
+      w < 2 ||
+      h < 2
+    ) {
+      continue
+    }
+    const start = Math.max(0, startSec)
+    const end = Math.max(0, endRaw)
+    if (end > 0 && end <= start) continue
+    result.push({
+      id: String(item.id || `mosaic-${result.length + 1}`),
+      startSec: Math.round(start * 1000) / 1000,
+      endSec: end > 0 ? Math.round(end * 1000) / 1000 : undefined,
+      x: Math.round(x),
+      y: Math.round(y),
+      w: Math.round(w),
+      h: Math.round(h),
+      mode: item.mode === 'blur' ? 'blur' : 'pixelate',
+      strength: Math.max(2, Math.min(128, Math.round(strength)))
+    })
+  }
+  return result
+}
+
+/** 打码时间段 enable 表达式，0 为有效起点 */
+function buildMosaicEnableExpr(region: MosaicRegion): string | null {
+  if (region.endSec != null && region.endSec > region.startSec) {
+    return `between(t\\,${region.startSec}\\,${region.endSec})`
+  }
+  if (region.startSec > 0) return `gte(t\\,${region.startSec})`
+  return null
+}
+
+/**
+ * 构建局部打码图。规则坐标处于 rotate/crop 后、scale/fps 前的画面坐标系。
+ * 返回的图以 [mosaicout] 收尾，供水印或编码映射继续使用。
+ */
+export function buildMosaicFilterComplex(options: CompressOptions): string | null {
+  const regions = normalizeMosaicRegions(options.mosaics)
+  if (regions.length === 0) return null
+
+  const pre: string[] = []
+  const rotate = buildRotateFilter(options.rotate90)
+  if (rotate) pre.push(rotate)
+  const crop = buildCropFilter(options.crop)
+  if (crop) pre.push(crop)
+
+  const parts: string[] = []
+  let input = '0:v'
+  if (pre.length > 0) {
+    parts.push(`[0:v]${pre.join(',')}[mosaicbase]`)
+    input = 'mosaicbase'
+  }
+
+  regions.forEach((region, index) => {
+    const base = `mos${index}base`
+    const roi = `mos${index}roi`
+    const effect = `mos${index}effect`
+    const out = `mos${index}out`
+    parts.push(`[${input}]split=2[${base}][${roi}]`)
+    const filter =
+      region.mode === 'blur'
+        ? `crop=${region.w}:${region.h}:${region.x}:${region.y},gblur=sigma=${region.strength}:steps=1`
+        : `crop=${region.w}:${region.h}:${region.x}:${region.y},scale='max(1\\,ceil(iw/${region.strength}))':'max(1\\,ceil(ih/${region.strength}))':flags=neighbor,scale=${region.w}:${region.h}:flags=neighbor`
+    parts.push(`[${roi}]${filter}[${effect}]`)
+    const enable = buildMosaicEnableExpr(region)
+    parts.push(
+      `[${base}][${effect}]overlay=${region.x}:${region.y}${enable ? `:enable='${enable}'` : ''}[${out}]`
+    )
+    input = out
+  })
+
+  const post: string[] = []
+  const scale = buildScalePadFilter(options)
+  if (scale) post.push(scale)
+  if (options.fps === '24' || options.fps === '30' || options.fps === '60') {
+    post.push(`fps=${options.fps}`)
+  }
+  parts.push(`[${input}]${post.length ? post.join(',') : 'null'}[mosaicout]`)
+  return parts.join(';')
+}
+
 /**
  * 生成 concat demuxer list 文件内容
  * 每行 file 'path'，路径内单引号转义为 '\''
@@ -756,6 +863,38 @@ export function planVideoFilters(
   opts?: { fontfile?: string }
 ): VideoFilterPlan {
   const base = buildVideoFilter(options)
+  const mosaic = buildMosaicFilterComplex(options)
+  if (mosaic) {
+    const wm = isWatermarkActive(options) ? (options.watermark as WatermarkOptions) : null
+    if (!wm) {
+      return { filterComplex: mosaic, mapVideoLabel: '[mosaicout]' }
+    }
+
+    const opacity = normalizeOpacity(wm.opacity, 0.8)
+    const { x, y } = buildWatermarkOverlayExpr(wm.position, wm.marginX, wm.marginY)
+    const enable = buildWatermarkEnableExpr(wm.startSec, wm.endSec)
+    if (wm.mode === 'text') {
+      const fontSize = normalizeNonNegInt(wm.fontSize, 24) || 24
+      const colorBase = (wm.fontColor || 'white').trim().replace(/@[\d.]+$/i, '') || 'white'
+      const text = escapeDrawtext(wm.text || '')
+      const font = opts?.fontfile ? `:fontfile='${escapeFilterPath(opts.fontfile)}'` : ''
+      const enablePart = enable ? `:enable='${enable}'` : ''
+      return {
+        filterComplex: `${mosaic};[mosaicout]drawtext=text='${text}':x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${colorBase}@${opacity}:borderw=1:bordercolor=black@0.4${font}${enablePart}[vout]`,
+        mapVideoLabel: '[vout]'
+      }
+    }
+
+    const imagePath = (wm.imagePath || '').trim()
+    const pct = Math.max(1, Math.min(100, Number(wm.scalePercent) || 15))
+    const wmScale = `scale='min(iw,min(iw\\,ih)*${pct}/100)':-1`
+    const enablePart = enable ? `:enable='${enable}'` : ''
+    return {
+      filterComplex: `${mosaic};[1:v]${wmScale},format=rgba,colorchannelmixer=aa=${opacity}[wm];[mosaicout][wm]overlay=x=${x}:y=${y}:shortest=1${enablePart}[vout]`,
+      extraInputs: [imagePath],
+      mapVideoLabel: '[vout]'
+    }
+  }
   if (!isWatermarkActive(options)) {
     return base ? { vf: base } : {}
   }

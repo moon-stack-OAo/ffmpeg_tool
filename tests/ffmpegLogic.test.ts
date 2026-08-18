@@ -7,6 +7,7 @@ import {
   buildConcatDemuxerList,
   buildConcatFilterComplex,
   buildCropFilter,
+  buildMosaicFilterComplex,
   buildOutputPath,
   buildScaleFilter,
   buildScalePadFilter,
@@ -19,6 +20,7 @@ import {
   estimateEtaSec,
   estimateVideoBitrateKbps,
   isImageMode,
+  normalizeMosaicRegions,
   nullOutputPath,
   parseProgressLine,
   parseSpeedMultiplier,
@@ -593,6 +595,86 @@ describe('watermark helpers', () => {
     expect(plan.vf).toContain('drawtext=')
     expect(plan.vf).toContain("fontfile='C\\:/Windows/Fonts/msyh.ttc'")
     expect(plan.vf).toContain("enable='between(t\\,1\\,5)'")
+  })
+})
+
+describe('mosaic filters', () => {
+  it('像素化区域生成 filter_complex、时间段和最近邻缩放', () => {
+    const plan = planVideoFilters(
+      baseOptions({
+        mosaics: [
+          {
+            id: 'face-1',
+            startSec: 2,
+            endSec: 5,
+            x: 100,
+            y: 40,
+            w: 160,
+            h: 100,
+            mode: 'pixelate',
+            strength: 16
+          }
+        ]
+      })
+    )
+    expect(plan.filterComplex).toContain('crop=160:100:100:40')
+    expect(plan.filterComplex).toContain('flags=neighbor')
+    expect(plan.filterComplex).toContain("enable='between(t\\,2\\,5)'")
+    expect(plan.mapVideoLabel).toBe('[mosaicout]')
+  })
+
+  it('模糊规则和缩放按正确顺序组合', () => {
+    const filter = buildMosaicFilterComplex(
+      baseOptions({
+        rotate90: 'cw',
+        maxEdge: 1280,
+        mosaics: [
+          {
+            id: 'plate',
+            startSec: 0,
+            x: 10,
+            y: 20,
+            w: 120,
+            h: 50,
+            mode: 'blur',
+            strength: 12
+          }
+        ]
+      })
+    )
+    expect(filter).toContain('[0:v]transpose=1[mosaicbase]')
+    expect(filter).toContain('gblur=sigma=12:steps=1')
+    expect(filter).toContain("scale='min(1280,iw)'")
+  })
+
+  it('非法规则被忽略，有效规则钳制强度', () => {
+    const regions = normalizeMosaicRegions([
+      {
+        id: 'bad', startSec: 3, endSec: 2, x: 0, y: 0, w: 20, h: 20, mode: 'pixelate', strength: 8
+      },
+      {
+        id: 'good', startSec: -1, x: 1.2, y: 2.6, w: 20.4, h: 30.6, mode: 'blur', strength: 999
+      }
+    ])
+    expect(regions).toEqual([
+      {
+        id: 'good', startSec: 0, endSec: undefined, x: 1, y: 3, w: 20, h: 31, mode: 'blur', strength: 128
+      }
+    ])
+  })
+
+  it('打码与图片水印共用 filter_complex 并保留额外输入', () => {
+    const plan = planVideoFilters(
+      baseOptions({
+        mosaics: [
+          { id: 'm1', startSec: 0, x: 0, y: 0, w: 20, h: 20, mode: 'pixelate', strength: 8 }
+        ],
+        watermark: { mode: 'image', imagePath: 'D:\\logo.png' }
+      })
+    )
+    expect(plan.extraInputs).toEqual(['D:\\logo.png'])
+    expect(plan.filterComplex).toContain('[mosaicout][wm]overlay=')
+    expect(plan.mapVideoLabel).toBe('[vout]')
   })
 })
 

@@ -46,6 +46,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   ffmpegBinDir: '',
   closeAction: 'ask',
+  openAtLogin: false,
+  startMinimizedToTray: false,
   imageEngine: 'sharp',
   imagemagickPath: '',
   imageFormat: 'jpeg',
@@ -230,6 +232,14 @@ function normalize(raw: Partial<AppSettings> | null | undefined): AppSettings {
     ffmpegBinDir:
       typeof src.ffmpegBinDir === 'string' ? src.ffmpegBinDir.trim() : '',
     closeAction: normalizeCloseAction(src.closeAction),
+    openAtLogin:
+      typeof src.openAtLogin === 'boolean'
+        ? src.openAtLogin
+        : DEFAULT_SETTINGS.openAtLogin,
+    startMinimizedToTray:
+      typeof src.startMinimizedToTray === 'boolean'
+        ? src.startMinimizedToTray
+        : DEFAULT_SETTINGS.startMinimizedToTray,
     imageEngine: normalizeImageEngine(src.imageEngine),
     imagemagickPath:
       typeof src.imagemagickPath === 'string' ? src.imagemagickPath.trim() : '',

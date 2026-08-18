@@ -65,6 +65,45 @@ let tray: Tray | null = null
 let allowQuit = false
 /** 关闭询问中，避免重复弹窗 */
 let closeAskPending = false
+/** 开机自启且选择启动到托盘时，首屏不显示主窗口 */
+let startHiddenToTray = false
+
+const LOGIN_HIDDEN_ARG = '--hidden'
+
+function shouldStartHiddenToTray(): boolean {
+  if (process.argv.includes(LOGIN_HIDDEN_ARG)) return true
+  try {
+    return Boolean(app.getLoginItemSettings().wasOpenedAsHidden)
+  } catch {
+    return false
+  }
+}
+
+/** 同步系统登录项（Windows / macOS；Linux 无实际效果） */
+function applyLoginItemSettings(settings: {
+  openAtLogin: boolean
+  startMinimizedToTray: boolean
+}): void {
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return
+  const openAtLogin = Boolean(settings.openAtLogin)
+  const startMinimizedToTray = openAtLogin && Boolean(settings.startMinimizedToTray)
+  try {
+    if (process.platform === 'win32') {
+      app.setLoginItemSettings({
+        openAtLogin,
+        path: process.execPath,
+        args: startMinimizedToTray ? [LOGIN_HIDDEN_ARG] : []
+      })
+      return
+    }
+    app.setLoginItemSettings({
+      openAtLogin,
+      openAsHidden: startMinimizedToTray
+    })
+  } catch (err) {
+    console.warn('[main] setLoginItemSettings failed:', err)
+  }
+}
 
 /** 图标搜索根目录：打包后在 process.resourcesPath/icons，开发态用仓库 resources/build */
 function iconSearchRoots(): string[] {
@@ -322,7 +361,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    if (startHiddenToTray) {
+      hideToTray()
+    } else {
+      mainWindow?.show()
+    }
     sendMaximized()
     if (mainWindow) {
       initAutoUpdater(mainWindow)
@@ -636,6 +679,12 @@ function registerIpc(): void {
     if (typeof part.imageEngine === 'string') {
       setImageEngine(next.imageEngine)
     }
+    if (
+      typeof part.openAtLogin === 'boolean' ||
+      typeof part.startMinimizedToTray === 'boolean'
+    ) {
+      applyLoginItemSettings(next)
+    }
     // 局域网开关/端口/用户名变更时同步 HTTP 服务
     const lanChanged =
       next.lanRemoteEnabled !== prev.lanRemoteEnabled ||
@@ -654,6 +703,7 @@ function registerIpc(): void {
     setBinaryOverride('')
     setMagickPath('')
     setImageEngine(next.imageEngine)
+    applyLoginItemSettings(next)
     return next
   })
 
@@ -1003,11 +1053,16 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   app.setAppUserModelId(APP_ID)
   const settings = loadSettings()
+  startHiddenToTray =
+    Boolean(settings.openAtLogin) &&
+    Boolean(settings.startMinimizedToTray) &&
+    shouldStartHiddenToTray()
   // 启动即应用用户自定义 ffmpeg bin 目录（无效时回退自动探测）
   setBinaryOverride(settings.ffmpegBinDir)
   setMagickPath(settings.imagemagickPath || '')
   setImageEngine(settings.imageEngine || 'sharp')
   taskQueue.setConcurrency(settings.concurrency)
+  applyLoginItemSettings(settings)
   registerIpc()
   registerUpdaterIpc()
   createWindow()

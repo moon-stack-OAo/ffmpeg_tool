@@ -55,6 +55,8 @@ const {
   notifyOnComplete,
   theme,
   closeAction,
+  openAtLogin,
+  startMinimizedToTray,
   trimStart,
   trimEnd,
   rotate90,
@@ -155,6 +157,8 @@ const {
   onNotifyOnCompleteChange,
   onPersistTasksChange,
   onCloseActionChange,
+  onOpenAtLoginChange,
+  onStartMinimizedToTrayChange,
   onTrimStartChange,
   onTrimEndChange,
   onRotate90Change,
@@ -984,7 +988,9 @@ async function onResetSettings(): Promise<void> {
         :lan-saving="lanSaving"
         :lan-status="lanStatus"
         :notify-on-complete="notifyOnComplete"
+        :open-at-login="openAtLogin"
         :persist-tasks="persistTasks"
+        :start-minimized-to-tray="startMinimizedToTray"
         :theme="theme"
         :update-checking="updateChecking"
         @browse-ffmpeg-dir="onBrowseFfmpegDir"
@@ -999,7 +1005,9 @@ async function onResetSettings(): Promise<void> {
         @image-engine-change="onImageEngineSelect"
         @notify-on-complete-change="onNotifyOnCompleteChange"
         @open-app-data="onOpenAppData"
+        @open-at-login-change="onOpenAtLoginChange"
         @persist-tasks-change="onPersistTasksChange"
+        @start-minimized-to-tray-change="onStartMinimizedToTrayChange"
         @re-detect-ffmpeg="loadStatus"
         @re-detect-image="loadImageStatus"
         @refresh-lan-status="refreshLanStatus"

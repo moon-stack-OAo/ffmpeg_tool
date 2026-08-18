@@ -116,6 +116,10 @@ export function useSettings(options: UseSettingsOptions = {}) {
   const composeFitIntroOutro = ref(true)
   /** 关闭按钮行为：ask | tray | quit */
   const closeAction = ref<CloseAction>('ask')
+  /** 开机自启 */
+  const openAtLogin = ref(false)
+  /** 开机启动后最小化到托盘 */
+  const startMinimizedToTray = ref(false)
   /** 裁剪开始秒，0 表示不裁剪（任务级，不持久化到 settings） */
   const trimStart = ref(0)
   /** 裁剪结束秒，0 表示到结尾 */
@@ -500,6 +504,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     persistTasks: boolean
     theme: ThemeMode
     closeAction: CloseAction
+    openAtLogin: boolean
+    startMinimizedToTray: boolean
     imageEngine: ImageEngineId
     imagemagickPath: string
     imageFormat: AppSettings['imageFormat']
@@ -538,6 +544,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
         persistTasks: persistTasks.value,
         theme: theme.value,
         closeAction: closeAction.value,
+        openAtLogin: openAtLogin.value,
+        startMinimizedToTray: startMinimizedToTray.value,
         imageEngine: imageEngine.value,
         imagemagickPath: imagemagickPath.value,
         imageFormat: imageFormat.value,
@@ -672,6 +680,9 @@ export function useSettings(options: UseSettingsOptions = {}) {
       s.closeAction === 'tray' || s.closeAction === 'quit' || s.closeAction === 'ask'
         ? s.closeAction
         : 'ask'
+    openAtLogin.value = typeof s.openAtLogin === 'boolean' ? s.openAtLogin : false
+    startMinimizedToTray.value =
+      typeof s.startMinimizedToTray === 'boolean' ? s.startMinimizedToTray : false
   }
 
   async function loadSettings(): Promise<void> {
@@ -974,6 +985,20 @@ export function useSettings(options: UseSettingsOptions = {}) {
     closeAction.value =
       v === 'tray' || v === 'quit' || v === 'ask' ? v : 'ask'
     persist({ closeAction: closeAction.value })
+  }
+
+  function onOpenAtLoginChange(v: boolean): void {
+    openAtLogin.value = Boolean(v)
+    if (!openAtLogin.value) startMinimizedToTray.value = false
+    persist({
+      openAtLogin: openAtLogin.value,
+      startMinimizedToTray: startMinimizedToTray.value
+    })
+  }
+
+  function onStartMinimizedToTrayChange(v: boolean): void {
+    startMinimizedToTray.value = Boolean(v) && openAtLogin.value
+    persist({ startMinimizedToTray: startMinimizedToTray.value })
   }
 
   /** 裁剪变更：仅同步 pending 任务，不写入 settings */
@@ -1340,6 +1365,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     composeOverlayEndSec,
     composeFitIntroOutro,
     closeAction,
+    openAtLogin,
+    startMinimizedToTray,
     trimStart,
     trimEnd,
     rotate90,
@@ -1406,6 +1433,8 @@ export function useSettings(options: UseSettingsOptions = {}) {
     onNotifyOnCompleteChange,
     onPersistTasksChange,
     onCloseActionChange,
+    onOpenAtLoginChange,
+    onStartMinimizedToTrayChange,
     onTrimStartChange,
     onTrimEndChange,
     onRotate90Change,

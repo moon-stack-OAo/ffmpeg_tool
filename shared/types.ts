@@ -616,6 +616,10 @@ export interface AppSettings {
    * - quit：直接退出应用
    */
   closeAction: CloseAction
+  /** 开机时启动，默认 false（仅 Windows / macOS 安装版可靠） */
+  openAtLogin: boolean
+  /** 开机启动后最小化到托盘，默认 false（需同时开启 openAtLogin） */
+  startMinimizedToTray: boolean
   /** 图片处理引擎，默认 sharp */
   imageEngine: ImageEngineId
   /**

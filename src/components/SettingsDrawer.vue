@@ -27,6 +27,8 @@ const props = defineProps<{
   notifyOnComplete: boolean
   persistTasks: boolean
   closeAction: CloseAction
+  openAtLogin: boolean
+  startMinimizedToTray: boolean
   ffmpegBinDir: string
   ffmpegStatus: FfmpegStatus | null
   imageEngine: ImageEngineId
@@ -47,6 +49,8 @@ const emit = defineEmits<{
   notifyOnCompleteChange: [v: boolean]
   persistTasksChange: [v: boolean]
   closeActionChange: [v: CloseAction]
+  openAtLoginChange: [v: boolean]
+  startMinimizedToTrayChange: [v: boolean]
   browseFfmpegDir: []
   clearFfmpegBinDir: []
   reDetectFfmpeg: []
@@ -294,6 +298,25 @@ function onPathKeydown(e: KeyboardEvent): void {
               />
             </el-select>
             <span class="setting-hint">点击关闭按钮时的默认行为</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">开机自启</span>
+            <el-switch
+              :model-value="openAtLogin"
+              size="small"
+              @change="(v: string | number | boolean) => emit('openAtLoginChange', Boolean(v))"
+            />
+            <span class="setting-hint">仅 Windows / macOS 安装版可靠；开发模式可能无效</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">启动到托盘</span>
+            <el-switch
+              :disabled="!openAtLogin"
+              :model-value="startMinimizedToTray"
+              size="small"
+              @change="(v: string | number | boolean) => emit('startMinimizedToTrayChange', Boolean(v))"
+            />
+            <span class="setting-hint">开机启动后先进入托盘，不弹出主窗口</span>
           </div>
         </div>
       </el-tab-pane>

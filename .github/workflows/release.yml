@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -71,7 +71,7 @@ jobs:
           node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
 
       - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: 轻影 v${{ steps.ver.outputs.version }}
@@ -96,12 +96,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -138,7 +138,7 @@ jobs:
           node scripts/extract-changelog.mjs "${{ steps.ver.outputs.version }}" release-notes.md
 
       - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: 轻影 v${{ steps.ver.outputs.version }}
@@ -148,8 +148,7 @@ jobs:
           files: |
             release/*.dmg
             release/*.zip
-            release/*.yml
-            release/*.yaml
+            release/latest-mac.yml
             release/*.blockmap
             release/RELEASE_NOTES.md
         env:

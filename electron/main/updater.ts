@@ -264,6 +264,26 @@ export async function checkForUpdates(manual = true): Promise<UpdateStatusPayloa
   }
 }
 
+/** 清空 pending 更新缓存，避免复用旧包 / 半成品 */
+async function clearPendingUpdateCache(): Promise<void> {
+  try {
+    const updater = autoUpdater as unknown as {
+      getOrCreateDownloadHelper?: () => Promise<{ clear: () => Promise<void> }>
+      downloadedUpdateHelper?: { clear: () => Promise<void> } | null
+    }
+    if (typeof updater.getOrCreateDownloadHelper === 'function') {
+      const helper = await updater.getOrCreateDownloadHelper()
+      await helper.clear()
+      return
+    }
+    if (updater.downloadedUpdateHelper) {
+      await updater.downloadedUpdateHelper.clear()
+    }
+  } catch {
+    // 清理失败不阻断后续全量下载
+  }
+}
+
 export async function downloadUpdate(): Promise<{ ok: boolean; error?: string }> {
   if (!isPackaged()) {
     return { ok: false, error: '开发模式无法下载更新' }
@@ -271,20 +291,20 @@ export async function downloadUpdate(): Promise<{ ok: boolean; error?: string }>
   if (downloadToken && !downloadToken.cancelled) {
     return { ok: false, error: '已有下载任务进行中' }
   }
-  if (updateDownloaded) {
-    return { ok: false, error: '更新已下载完成，请点击「重启并安装」' }
-  }
+
+  // 一点击下载：先清旧缓存，再全量拉取（允许覆盖已下完的包）
+  updateDownloaded = false
+  await clearPendingUpdateCache()
 
   const token = new CancellationToken()
   downloadToken = token
-  updateDownloaded = false
 
   send({
     state: 'downloading',
     version: lastAvailableVersion || undefined,
     releaseNotes: lastReleaseNotes,
     percent: 0,
-    message: '开始下载…'
+    message: '已清除旧缓存，开始全量下载…'
   })
 
   try {

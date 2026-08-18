@@ -1,16 +1,7 @@
-import type {
-  ImageEngineId,
-  ImageEngineStatus,
-  ImageProcessOptions,
-  ImageProcessResult
-} from '../../../shared/types'
-import {
-  checkMagickAvailable,
-  checkSharpReady,
-  setMagickOverride
-} from './bin'
-import { processWithMagick } from './magickEngine'
-import { processWithSharp } from './sharpEngine'
+import type {ImageEngineId, ImageEngineStatus, ImageProcessOptions, ImageProcessResult} from '../../../shared/types'
+import {checkMagickAvailable, checkSharpReady, setMagickOverride} from './bin'
+import {processWithMagick} from './magickEngine'
+import {processWithSharp} from './sharpEngine'
 
 let currentEngine: ImageEngineId = 'sharp'
 
@@ -108,5 +99,9 @@ export async function processImage(
 }
 
 export { checkSharpReady, checkMagickAvailable, setMagickOverride }
-export { getImageInfo, getImageDataUrl } from './preview'
-export type { ImageInfoResult, ImageDataUrlResult } from './preview'
+export { getImageInfo, getImageDataUrl, getImageJpegBuffer } from './preview'
+export type {
+  ImageInfoResult,
+  ImageDataUrlResult,
+  ImageJpegBufferResult
+} from './preview'

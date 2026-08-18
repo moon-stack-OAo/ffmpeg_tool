@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { IMAGE_EXTENSIONS } from '../../../shared/types'
-import { checkSharpReady } from './bin'
+import {IMAGE_EXTENSIONS} from '../../../shared/types'
+import {checkSharpReady} from './bin'
 
 const IMAGE_EXT_SET = new Set(
   (IMAGE_EXTENSIONS as string[]).map((e) => e.toLowerCase())
@@ -103,16 +103,25 @@ export async function getImageInfo(filePath: string): Promise<ImageInfoResult> {
   }
 }
 
+export interface ImageJpegBufferResult {
+  ok: boolean
+  buffer?: Buffer
+  width?: number
+  height?: number
+  previewWidth?: number
+  previewHeight?: number
+  error?: string
+}
+
 /**
- * 生成预览 data URL
+ * 生成预览 JPEG Buffer（任务列表缩略图 / 局域网接口复用）
  * - rotate() 按 EXIF 校正
- * - 裁切坐标基于 orient 后原图尺寸
  * - maxEdge 默认 1600，inside 缩小，jpeg quality 80
  */
-export async function getImageDataUrl(
+export async function getImageJpegBuffer(
   filePath: string,
   maxEdge = 1600
-): Promise<ImageDataUrlResult> {
+): Promise<ImageJpegBufferResult> {
   const pathErr = validateImagePath(filePath)
   if (pathErr) return { ok: false, error: pathErr }
   if (!checkSharpReady()) {
@@ -154,21 +163,40 @@ export async function getImageDataUrl(
       info: { width: number; height: number }
     }
 
-    const previewWidth = result.info.width
-    const previewHeight = result.info.height
-    const b64 = result.data.toString('base64')
-    const dataUrl = `data:image/jpeg;base64,${b64}`
-
     return {
       ok: true,
-      dataUrl,
+      buffer: result.data,
       width,
       height,
-      previewWidth,
-      previewHeight
+      previewWidth: result.info.width,
+      previewHeight: result.info.height
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, error: msg || '生成预览失败' }
+  }
+}
+
+/**
+ * 生成预览 data URL
+ * - rotate() 按 EXIF 校正
+ * - 裁切坐标基于 orient 后原图尺寸
+ * - maxEdge 默认 1600，inside 缩小，jpeg quality 80
+ */
+export async function getImageDataUrl(
+  filePath: string,
+  maxEdge = 1600
+): Promise<ImageDataUrlResult> {
+  const r = await getImageJpegBuffer(filePath, maxEdge)
+  if (!r.ok || !r.buffer) {
+    return { ok: false, error: r.error || '生成预览失败' }
+  }
+  return {
+    ok: true,
+    dataUrl: `data:image/jpeg;base64,${r.buffer.toString('base64')}`,
+    width: r.width,
+    height: r.height,
+    previewWidth: r.previewWidth,
+    previewHeight: r.previewHeight
   }
 }

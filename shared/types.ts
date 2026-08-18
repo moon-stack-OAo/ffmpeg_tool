@@ -661,6 +661,8 @@ export interface LanTaskView {
   mode?: TaskMode
   /** 是否可下载 */
   downloadable: boolean
+  /** 是否可请求缩略图（视频/图片；音频为 false） */
+  hasThumbnail?: boolean
 }
 
 /** 设置/更新局域网远程配置（密码仅在修改时传明文，主进程哈希后存储） */

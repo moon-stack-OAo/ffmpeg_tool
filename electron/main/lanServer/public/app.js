@@ -20,23 +20,50 @@
   const taskBody = $('task-body')
   const optMode = $('opt-mode')
   const optPreset = $('opt-preset')
+  const optImagePreset = $('opt-image-preset')
+  const wrapPreset = $('wrap-preset')
+  const wrapImagePreset = $('wrap-image-preset')
   const wrapFormat = $('wrap-format')
   const wrapMaxedge = $('wrap-maxedge')
   const wrapAformat = $('wrap-aformat')
   const wrapAbitrate = $('wrap-abitrate')
+  const wrapIformat = $('wrap-iformat')
+  const wrapIquality = $('wrap-iquality')
+  const wrapImaxedge = $('wrap-imaxedge')
+  const wrapIstrip = $('wrap-istrip')
   const customOpts = $('custom-opts')
   const presetHint = $('preset-hint')
+  const fileHint = $('file-hint')
   const optCrf = $('opt-crf')
   const optTarget = $('opt-target')
   const optMaxedge = $('opt-maxedge')
   const optFormat = $('opt-format')
+  const optIformat = $('opt-iformat')
+  const optIquality = $('opt-iquality')
+  const optImaxedge = $('opt-imaxedge')
+  const optIstrip = $('opt-istrip')
 
-  /** 预设默认值（与 shared DEFAULT_PRESETS 对齐） */
+  /** 视频预设默认值（与 shared DEFAULT_PRESETS 对齐） */
   const PRESET_DEFAULTS = {
     archive: { crf: 18, maxEdge: 0, format: 'mp4', label: 'CRF 18 · 原分辨率 · 画质优先' },
     standard: { crf: 23, maxEdge: 0, format: 'mp4', label: 'CRF 23 · 原分辨率 · 均衡' },
     social: { crf: 28, maxEdge: 1280, format: 'mp4', label: 'CRF 28 · 最长边 1280 · 更小体积' },
     custom: { crf: 23, maxEdge: 0, format: 'mp4', label: '手动设置 CRF、分辨率与格式' }
+  }
+
+  /** 图片预设默认值（与 shared DEFAULT_IMAGE_PRESETS 对齐） */
+  const IMAGE_PRESET_DEFAULTS = {
+    optimize: { maxEdge: 0, quality: 85, format: 'keep', label: '保持原格式 · 质量 85 · 不缩放' },
+    standard: { maxEdge: 1920, quality: 80, format: 'jpeg', label: 'JPEG · 质量 80 · 最长边 1920' },
+    social: { maxEdge: 1280, quality: 75, format: 'jpeg', label: 'JPEG · 质量 75 · 最长边 1280' },
+    thumb: { maxEdge: 400, quality: 70, format: 'jpeg', label: 'JPEG · 质量 70 · 最长边 400' },
+    custom: { maxEdge: 1920, quality: 80, format: 'jpeg', label: '手动设置格式、质量与最长边' }
+  }
+
+  const ACCEPT_BY_MODE = {
+    compress: 'video/*,.mp4,.mkv,.mov,.avi,.webm,.flv,.m4v,.ts,.mts,.m2ts,.3gp',
+    audio: 'video/*,audio/*,.mp4,.mkv,.mov,.avi,.webm,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.wma',
+    image: 'image/*,.jpg,.jpeg,.png,.webp,.bmp,.gif,.tif,.tiff'
   }
 
   const FILE_PLACEHOLDER = '点击或拖拽文件到此处'
@@ -99,35 +126,75 @@
   }
 
   function syncModeUi() {
-    const audio = optMode.value === 'audio'
+    const mode = optMode.value
+    const audio = mode === 'audio'
+    const image = mode === 'image'
+    const video = !audio && !image
     const custom = optPreset.value === 'custom'
-    wrapFormat.hidden = audio
-    wrapMaxedge.hidden = audio
+    const imageCustom = optImagePreset && optImagePreset.value === 'custom'
+
+    if (wrapPreset) wrapPreset.hidden = image
+    if (wrapImagePreset) wrapImagePreset.hidden = !image
+    wrapFormat.hidden = !video
+    wrapMaxedge.hidden = !video
     wrapAformat.hidden = !audio
     wrapAbitrate.hidden = !audio
-    // 自定义高级区：仅视频压缩 + 自定义预设
+    if (wrapIformat) wrapIformat.hidden = !image || !imageCustom
+    if (wrapIquality) wrapIquality.hidden = !image || !imageCustom
+    if (wrapImaxedge) wrapImaxedge.hidden = !image || !imageCustom
+    if (wrapIstrip) wrapIstrip.hidden = !image || !imageCustom
+
     if (customOpts) {
-      customOpts.hidden = audio || !custom
+      customOpts.hidden = !video || !custom
     }
-    const def = PRESET_DEFAULTS[optPreset.value] || PRESET_DEFAULTS.standard
+
+    if (fileInput) {
+      fileInput.accept = ACCEPT_BY_MODE[mode] || ACCEPT_BY_MODE.compress
+    }
+    if (fileHint) {
+      fileHint.textContent = image
+        ? '图片 · 单文件'
+        : audio
+          ? '视频 / 音频 · 单文件'
+          : '视频 · 单文件'
+    }
+
     if (presetHint) {
-      if (audio) {
+      if (image) {
+        const idef =
+          IMAGE_PRESET_DEFAULTS[optImagePreset ? optImagePreset.value : 'standard'] ||
+          IMAGE_PRESET_DEFAULTS.standard
+        presetHint.textContent = imageCustom
+          ? idef.label + ' · 下方可改格式 / 质量 / 最长边'
+          : idef.label
+      } else if (audio) {
         presetHint.textContent = '音频模式仅抽取音轨，忽略视频预设画质参数'
-      } else if (custom) {
-        presetHint.textContent = def.label + ' · 下方可改 CRF / 目标体积'
       } else {
-        presetHint.textContent = def.label
+        const def = PRESET_DEFAULTS[optPreset.value] || PRESET_DEFAULTS.standard
+        presetHint.textContent = custom
+          ? def.label + ' · 下方可改 CRF / 目标体积'
+          : def.label
       }
     }
   }
 
-  /** 切换预设时填入默认 CRF / 最长边 / 格式（自定义也给一组起点值） */
+  /** 切换视频预设时填入默认 CRF / 最长边 / 格式 */
   function applyPresetDefaults() {
     const def = PRESET_DEFAULTS[optPreset.value] || PRESET_DEFAULTS.standard
     if (optCrf) optCrf.value = String(def.crf)
     if (optMaxedge) optMaxedge.value = String(def.maxEdge)
     if (optFormat && def.format) optFormat.value = def.format
     if (optTarget && optPreset.value !== 'custom') optTarget.value = '0'
+    syncModeUi()
+  }
+
+  /** 切换图片预设时填入默认格式 / 质量 / 最长边 */
+  function applyImagePresetDefaults() {
+    const id = optImagePreset ? optImagePreset.value : 'standard'
+    const def = IMAGE_PRESET_DEFAULTS[id] || IMAGE_PRESET_DEFAULTS.standard
+    if (optIformat && def.format) optIformat.value = def.format
+    if (optIquality) optIquality.value = String(def.quality)
+    if (optImaxedge) optImaxedge.value = String(def.maxEdge)
     syncModeUi()
   }
 
@@ -199,8 +266,14 @@
     showLogin()
   })
 
-  optMode.addEventListener('change', syncModeUi)
+  optMode.addEventListener('change', () => {
+    if (optMode.value === 'image') applyImagePresetDefaults()
+    else syncModeUi()
+  })
   optPreset.addEventListener('change', applyPresetDefaults)
+  if (optImagePreset) {
+    optImagePreset.addEventListener('change', applyImagePresetDefaults)
+  }
 
   fileInput.addEventListener('change', () => {
     const f = fileInput.files && fileInput.files[0]
@@ -249,6 +322,22 @@
     return map[s] || s
   }
 
+  function modeLabel(m) {
+    const map = {
+      compress: '视频',
+      audio: '音频',
+      image: '图片'
+    }
+    return map[m] || ''
+  }
+
+  function modeClass(m) {
+    if (m === 'audio') return 'is-audio'
+    if (m === 'image') return 'is-image'
+    if (m === 'compress') return 'is-video'
+    return ''
+  }
+
   function progressValue(t) {
     if (t.status === 'completed') return 100
     if (typeof t.progress === 'number' && Number.isFinite(t.progress)) {
@@ -289,11 +378,24 @@
         const dl = t.downloadable
           ? `<a class="btn sm primary" href="/api/tasks/${encodeURIComponent(t.id)}/download">下载</a>`
           : '<span class="muted">—</span>'
+        const modeTag = modeLabel(t.mode)
+          ? `<span class="mode-tag ${modeClass(t.mode)}">${escapeHtml(modeLabel(t.mode))}</span>`
+          : ''
+        const thumb =
+          t.hasThumbnail && t.mode !== 'audio'
+            ? `<button type="button" class="task-thumb-btn" data-preview-id="${escapeHtml(t.id)}" data-preview-name="${escapeHtml(t.fileName || t.id)}" title="点击查看大图">
+                <img class="task-thumb" src="/api/tasks/${encodeURIComponent(t.id)}/thumbnail" alt="" loading="lazy" onerror="this.closest('.task-thumb-btn').classList.add('is-fail')" />
+              </button>`
+            : `<span class="task-thumb task-thumb-ph ${t.mode === 'audio' ? 'is-audio' : ''}" aria-hidden="true"></span>`
         return `<tr>
           <td>
-            <div class="task-file">
-              <div class="task-file-name" title="${escapeHtml(t.fileName || t.id)}">${escapeHtml(t.fileName || t.id)}</div>
-              ${err}
+            <div class="task-file-row">
+              ${thumb}
+              <div class="task-file">
+                <div class="task-file-name" title="${escapeHtml(t.fileName || t.id)}">${escapeHtml(t.fileName || t.id)}</div>
+                ${modeTag}
+                ${err}
+              </div>
             </div>
           </td>
           <td><span class="status ${escapeHtml(t.status)}">${statusLabel(t.status)}</span></td>
@@ -348,19 +450,37 @@
       return
     }
 
-    const options = {
-      mode: optMode.value,
-      presetId: optPreset.value,
-      format: optFormat.value,
-      maxEdge: Number(optMaxedge.value) || 0,
-      audioFormat: $('opt-aformat').value,
-      audioBitrate: $('opt-abitrate').value
-    }
-    if (optPreset.value === 'custom' && optMode.value !== 'audio') {
-      options.crf = Number(optCrf.value)
-      if (!Number.isFinite(options.crf)) options.crf = 23
-      const target = Number(optTarget.value) || 0
-      if (target > 0) options.targetSizeMb = target
+    const mode = optMode.value
+    let options
+    if (mode === 'image') {
+      const imagePresetId = optImagePreset ? optImagePreset.value : 'standard'
+      options = {
+        mode: 'image',
+        imagePresetId
+      }
+      if (imagePresetId === 'custom') {
+        options.image = {
+          format: optIformat ? optIformat.value : 'jpeg',
+          quality: Number(optIquality && optIquality.value) || 80,
+          maxEdge: Number(optImaxedge && optImaxedge.value) || 0,
+          strip: optIstrip ? Boolean(optIstrip.checked) : true
+        }
+      }
+    } else {
+      options = {
+        mode,
+        presetId: optPreset.value,
+        format: optFormat.value,
+        maxEdge: Number(optMaxedge.value) || 0,
+        audioFormat: $('opt-aformat').value,
+        audioBitrate: $('opt-abitrate').value
+      }
+      if (optPreset.value === 'custom' && mode !== 'audio') {
+        options.crf = Number(optCrf.value)
+        if (!Number.isFinite(options.crf)) options.crf = 23
+        const target = Number(optTarget.value) || 0
+        if (target > 0) options.targetSizeMb = target
+      }
     }
 
     const fd = new FormData()
@@ -413,6 +533,100 @@
     }
 
     xhr.send(fd)
+  })
+
+  const lightbox = $('thumb-lightbox')
+  const lightboxImg = $('thumb-lightbox-img')
+  const lightboxTitle = $('thumb-lightbox-title')
+  const lightboxLoading = $('thumb-lightbox-loading')
+  const previewCache = Object.create(null)
+
+  function closeLightbox() {
+    if (!lightbox) return
+    lightbox.hidden = true
+    document.body.classList.remove('lightbox-open')
+    if (lightboxImg) {
+      lightboxImg.hidden = true
+      lightboxImg.removeAttribute('src')
+    }
+    if (lightboxLoading) {
+      lightboxLoading.hidden = true
+      lightboxLoading.classList.remove('is-error')
+    }
+  }
+
+  function openLightbox(taskId, fileName) {
+    if (!lightbox || !taskId) return
+    lightbox.hidden = false
+    document.body.classList.add('lightbox-open')
+    if (lightboxTitle) lightboxTitle.textContent = fileName || '预览'
+    if (lightboxImg) {
+      lightboxImg.hidden = true
+      lightboxImg.removeAttribute('src')
+    }
+    if (lightboxLoading) {
+      lightboxLoading.hidden = false
+      lightboxLoading.classList.remove('is-error')
+    }
+
+    const thumbSrc = '/api/tasks/' + encodeURIComponent(taskId) + '/thumbnail'
+    const previewSrc =
+      '/api/tasks/' + encodeURIComponent(taskId) + '/thumbnail?edge=1280'
+    const cached = previewCache[taskId]
+
+    const show = (src) => {
+      if (!lightboxImg) return
+      lightboxImg.onload = () => {
+        if (lightboxLoading) lightboxLoading.hidden = true
+        lightboxImg.hidden = false
+      }
+      lightboxImg.onerror = () => {
+        if (lightboxLoading) {
+          lightboxLoading.hidden = false
+          lightboxLoading.classList.add('is-error')
+        }
+      }
+      lightboxImg.src = src
+    }
+
+    if (cached) {
+      show(cached)
+      return
+    }
+
+    // 先显示小图，再换大图
+    show(thumbSrc)
+    const hi = new Image()
+    hi.onload = () => {
+      previewCache[taskId] = previewSrc
+      if (!lightbox.hidden) show(previewSrc)
+    }
+    hi.onerror = () => {
+      // 保留小图
+    }
+    hi.src = previewSrc
+  }
+
+  if (taskBody) {
+    taskBody.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest
+        ? e.target.closest('[data-preview-id]')
+        : null
+      if (!btn || btn.classList.contains('is-fail')) return
+      e.preventDefault()
+      openLightbox(btn.getAttribute('data-preview-id'), btn.getAttribute('data-preview-name'))
+    })
+  }
+
+  ;['thumb-lightbox-close', 'thumb-lightbox-x'].forEach((id) => {
+    const el = $(id)
+    if (el) el.addEventListener('click', closeLightbox)
+  })
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightbox && !lightbox.hidden) {
+      closeLightbox()
+    }
   })
 
   void checkStatus()

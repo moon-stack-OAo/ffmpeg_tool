@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import {app} from 'electron'
 
 export {
   getFfmpegPath,
@@ -16,8 +16,10 @@ export {
 
 export {
   extractVideoFrame,
+  extractVideoFrameJpeg,
   type ExtractVideoFrameOpts,
-  type ExtractVideoFrameResult
+  type ExtractVideoFrameResult,
+  type ExtractVideoFrameJpegResult
 } from './frameExtract'
 
 export {

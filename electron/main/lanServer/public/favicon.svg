@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img"
+     aria-label="轻影">
+    <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1B4DFF"/>
+            <stop offset="55%" stop-color="#0EA5E9"/>
+            <stop offset="100%" stop-color="#14B8A6"/>
+        </linearGradient>
+        <linearGradient id="shine" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+            <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.05"/>
+            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+        </linearGradient>
+        <!-- 画幅内：柔和光影 -->
+        <linearGradient id="frameFill" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
+            <stop offset="55%" stop-color="#E0F2FE" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#BAE6FD" stop-opacity="0.9"/>
+        </linearGradient>
+        <linearGradient id="lightBeam" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+            <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="shadowSil" x1="20%" y1="0%" x2="90%" y2="100%">
+            <stop offset="0%" stop-color="#0B1738" stop-opacity="0.12"/>
+            <stop offset="100%" stop-color="#0B1738" stop-opacity="0.32"/>
+        </linearGradient>
+        <radialGradient id="softGlow" cx="32%" cy="28%" r="55%">
+            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.45"/>
+            <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.08"/>
+            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+        </radialGradient>
+        <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#0B1B4A" flood-opacity="0.28"/>
+        </filter>
+    </defs>
+
+    <!-- 圆角方底 -->
+    <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#bg)" filter="url(#softShadow)"/>
+    <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#shine)"/>
+
+    <!-- 主体：简洁画幅（宽银幕比例感） -->
+    <rect x="196" y="278" width="632" height="468" rx="72" fill="#0B1738" fill-opacity="0.18"/>
+    <rect x="220" y="302" width="584" height="420" rx="58" fill="url(#frameFill)"/>
+
+    <!-- 画幅内柔光 -->
+    <rect x="220" y="302" width="584" height="420" rx="58" fill="url(#softGlow)"/>
+
+    <!-- 一束斜向柔光（轻） -->
+    <path d="M280 302 L520 302 L420 722 L220 722 Z" fill="url(#lightBeam)" opacity="0.9"/>
+
+    <!-- 「影」的剪影感：柔和侧影弧面 -->
+    <path d="M520 320
+             C620 340 700 400 720 500
+             C740 600 680 680 560 700
+             C480 710 420 680 400 620
+             C380 560 420 480 480 420
+             C500 390 510 350 520 320 Z"
+          fill="url(#shadowSil)"/>
+
+    <!-- 中心影像符号：简洁播放三角（轻盈、居中） -->
+    <path d="M430 400 L430 624 L650 512 Z" fill="#0EA5E9" fill-opacity="0.88"/>
+    <path d="M446 430 L446 594 L610 512 Z" fill="#FFFFFF" fill-opacity="0.96"/>
+
+    <!-- 右上轻微光斑，强化「轻」 -->
+    <circle cx="720" cy="360" r="36" fill="#FFFFFF" fill-opacity="0.35"/>
+    <circle cx="748" cy="388" r="18" fill="#FFFFFF" fill-opacity="0.22"/>
+</svg>

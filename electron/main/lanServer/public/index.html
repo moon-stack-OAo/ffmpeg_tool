@@ -4,12 +4,37 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>轻影 · 远程访问</title>
+  <link href="/favicon.ico" rel="icon" sizes="any" />
+  <link href="/favicon-32.png" rel="icon" sizes="32x32" type="image/png" />
+  <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
+  <link href="/favicon-32.png" rel="apple-touch-icon" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div id="app">
+    <!-- 缩略图预览 -->
+    <div id="thumb-lightbox" class="thumb-lightbox" hidden>
+      <button id="thumb-lightbox-close" aria-label="关闭预览" class="thumb-lightbox-backdrop" type="button"></button>
+      <div aria-label="预览" aria-modal="true" class="thumb-lightbox-panel" role="dialog">
+        <div class="thumb-lightbox-head">
+          <span id="thumb-lightbox-title" class="thumb-lightbox-title">预览</span>
+          <button id="thumb-lightbox-x" class="btn ghost btn-lightbox-close" type="button">关闭</button>
+        </div>
+        <div class="thumb-lightbox-body">
+          <div
+            id="thumb-lightbox-loading"
+            aria-label="正在加载预览"
+            class="thumb-lightbox-loading"
+            hidden
+          ></div>
+          <img id="thumb-lightbox-img" alt="" class="thumb-lightbox-img" hidden />
+        </div>
+      </div>
+    </div>
+
     <!-- 登录 -->
     <section id="view-login" class="view">
+      <div aria-hidden="true" class="login-bg"></div>
       <div class="card login-card">
         <div class="brand">
           <div class="brand-mark">轻</div>
@@ -21,11 +46,11 @@
         <form id="login-form">
           <label>
             <span>用户名</span>
-            <input id="login-user" type="text" autocomplete="username" required />
+            <input id="login-user" autocomplete="username" placeholder="admin" required type="text" />
           </label>
           <label>
             <span>密码</span>
-            <input id="login-pass" type="password" autocomplete="current-password" required />
+            <input id="login-pass" autocomplete="current-password" placeholder="请输入密码" required type="password" />
           </label>
           <p id="login-error" class="error" hidden></p>
           <button type="submit" class="btn primary" id="login-btn">登录</button>
@@ -46,7 +71,7 @@
         </div>
         <div class="topbar-actions">
           <span id="whoami" class="user-chip"></span>
-          <button type="button" class="btn ghost" id="btn-logout">退出</button>
+          <button id="btn-logout" class="btn ghost btn-logout" type="button">退出</button>
         </div>
       </header>
 
@@ -55,7 +80,7 @@
         <div class="workbench-header">
           <div class="page-intro">
             <h1 class="page-title">工作台</h1>
-            <p class="page-desc">上传后由公共机排队处理，完成后可下载</p>
+            <p class="page-desc">上传后由本机排队处理，完成后可下载结果</p>
           </div>
           <div class="stat-row" id="stat-row">
             <div class="stat-chip">
@@ -63,6 +88,7 @@
               <span class="stat-label">全部</span>
             </div>
             <div class="stat-chip is-run">
+              <span aria-hidden="true" class="stat-dot"></span>
               <span class="stat-num" id="stat-active">0</span>
               <span class="stat-label">进行中</span>
             </div>
@@ -95,7 +121,7 @@
                   <input
                     id="file-input"
                     type="file"
-                    accept="video/*,audio/*,.mp4,.mkv,.mov,.avi,.webm,.mp3,.m4a,.wav"
+                    accept="video/*,audio/*,image/*,.mp4,.mkv,.mov,.avi,.webm,.mp3,.m4a,.wav,.jpg,.jpeg,.png,.webp,.bmp,.gif,.tif,.tiff"
                     required
                   />
                   <div class="dropzone-inner">
@@ -107,7 +133,7 @@
                     </div>
                     <div class="dropzone-text">
                       <span id="file-name" class="file-name">点击或拖拽文件到此处</span>
-                      <span class="file-hint">视频 / 音频 · 单文件</span>
+                      <span id="file-hint" class="file-hint">视频 / 音频 / 图片 · 单文件</span>
                     </div>
                   </div>
                 </label>
@@ -120,14 +146,25 @@
                       <select id="opt-mode">
                         <option value="compress">视频压缩</option>
                         <option value="audio">仅抽取音频</option>
+                        <option value="image">图片压缩</option>
                       </select>
                     </label>
-                    <label>
+                    <label id="wrap-preset">
                       <span>预设</span>
                       <select id="opt-preset">
                         <option value="standard">标准压缩</option>
                         <option value="archive">高清存档</option>
                         <option value="social">微信/社交</option>
+                        <option value="custom">自定义</option>
+                      </select>
+                    </label>
+                    <label id="wrap-image-preset" hidden>
+                      <span>图片预设</span>
+                      <select id="opt-image-preset">
+                        <option value="optimize">优化压缩</option>
+                        <option selected value="standard">标准</option>
+                        <option value="social">社交分享</option>
+                        <option value="thumb">缩略图</option>
                         <option value="custom">自定义</option>
                       </select>
                     </label>
@@ -169,6 +206,45 @@
                         <option value="256k">256k</option>
                         <option value="320k">320k</option>
                       </select>
+                    </label>
+                    <label id="wrap-iformat" hidden>
+                      <span>图片格式</span>
+                      <select id="opt-iformat">
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                        <option value="webp">WebP</option>
+                        <option value="keep">保持原格式</option>
+                      </select>
+                    </label>
+                    <label id="wrap-iquality" hidden>
+                      <span>质量（1–100）</span>
+                      <input
+                        id="opt-iquality"
+                        inputmode="numeric"
+                        max="100"
+                        min="1"
+                        placeholder="80"
+                        step="1"
+                        type="number"
+                        value="80"
+                      />
+                    </label>
+                    <label id="wrap-imaxedge" hidden>
+                      <span>最长边</span>
+                      <input
+                        id="opt-imaxedge"
+                        inputmode="numeric"
+                        max="16000"
+                        min="0"
+                        placeholder="0=不缩放"
+                        step="1"
+                        type="number"
+                        value="1920"
+                      />
+                    </label>
+                    <label id="wrap-istrip" class="check-row" hidden>
+                      <span>去除元数据</span>
+                      <input id="opt-istrip" checked type="checkbox" />
                     </label>
                   </div>
                   <p id="preset-hint" class="opts-hint muted"></p>

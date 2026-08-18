@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder } from '@element-plus/icons-vue'
+import {ref, watch} from 'vue'
+import {ElMessage, ElMessageBox} from 'element-plus'
+import {Folder} from '@element-plus/icons-vue'
 import type {
   AppInfo,
   CloseAction,
@@ -11,7 +11,6 @@ import type {
   LanStatus,
   ThemeMode
 } from '@shared/types'
-import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
 import {
   CLOSE_ACTION_OPTIONS,
   CONCURRENCY_HINT,
@@ -19,6 +18,7 @@ import {
   IMAGE_ENGINE_OPTIONS,
   THEME_OPTIONS
 } from '@shared/types'
+import {PRODUCT_NAME, PRODUCT_TAGLINE} from '@shared/brand'
 
 const props = defineProps<{
   visible: boolean
@@ -438,7 +438,7 @@ function onPathKeydown(e: KeyboardEvent): void {
       <el-tab-pane label="远程访问" name="lan" lazy>
         <div class="setting-pane">
           <p class="setting-hint lan-intro">
-            开启后，同一局域网内可用浏览器访问本机服务，登录后上传任务并下载结果。编码器、水印、并发等仍使用本机设置。
+            开启后，同一局域网内可用浏览器访问本机服务，登录后上传视频/音频/图片任务并下载结果。编码器、水印、并发、图片引擎等仍使用本机设置。
           </p>
           <div class="setting-row">
             <span class="setting-label">允许远程访问</span>

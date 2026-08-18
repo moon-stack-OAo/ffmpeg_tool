@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { type CompressTask, formatFileSize } from '@shared/types'
+import {ref, toRef} from 'vue'
+import {ElMessage} from 'element-plus'
+import {type CompressTask, formatFileSize} from '@shared/types'
 import {
   formatEta,
   modeLabel as modeLabelText,
@@ -11,6 +11,7 @@ import {
   statusLabel,
   statusType
 } from '../utils/taskUi'
+import {useTaskThumbs} from '../composables/useTaskThumbs'
 
 const props = defineProps<{
   tasks: CompressTask[]
@@ -18,6 +19,31 @@ const props = defineProps<{
   hasActive: boolean
   selectedTaskId?: string | null
 }>()
+
+const { thumbUrl, thumbLoading, isAudioMode, ensurePreview } = useTaskThumbs(
+  toRef(props, 'tasks')
+)
+
+const previewVisible = ref(false)
+const previewUrl = ref('')
+const previewTitle = ref('')
+const previewBusy = ref(false)
+
+async function openThumbPreview(task: CompressTask, e?: Event): Promise<void> {
+  e?.stopPropagation()
+  if (isAudioMode(task.options?.mode)) return
+  if (!thumbUrl(task.id) && !thumbLoading(task.id)) return
+  previewTitle.value = task.fileName || task.id
+  previewUrl.value = thumbUrl(task.id) || ''
+  previewVisible.value = true
+  previewBusy.value = true
+  try {
+    const hi = await ensurePreview(task.id)
+    if (hi) previewUrl.value = hi
+  } finally {
+    previewBusy.value = false
+  }
+}
 
 const emit = defineEmits<{
   startOne: [task: CompressTask]
@@ -174,9 +200,34 @@ function baseName(p: string): string {
       stripe
       @row-click="onRowClick"
     >
-      <el-table-column label="文件名" min-width="180">
+      <el-table-column label="文件名" min-width="220">
         <template #default="{ row }">
-          <div class="file-cell">
+          <div class="file-cell-row">
+            <button
+              :class="{
+                'is-audio': isAudioMode(row.options?.mode),
+                'is-loading': thumbLoading(row.id),
+                'is-empty':
+                  !thumbUrl(row.id) &&
+                  !thumbLoading(row.id) &&
+                  !isAudioMode(row.options?.mode),
+                'is-clickable': Boolean(thumbUrl(row.id))
+              }"
+              :disabled="!thumbUrl(row.id)"
+              :title="thumbUrl(row.id) ? '点击查看大图' : undefined"
+              class="file-thumb"
+              type="button"
+              @click="openThumbPreview(row, $event)"
+            >
+              <img
+                v-if="thumbUrl(row.id)"
+                :src="thumbUrl(row.id)!"
+                alt=""
+                class="file-thumb-img"
+                draggable="false"
+              />
+            </button>
+            <div class="file-cell">
             <span class="file-name" :title="row.fileName">{{ row.fileName }}</span>
             <template v-if="isStitchTask(row)">
               <button
@@ -243,6 +294,7 @@ function baseName(p: string): string {
                 </div>
               </div>
             </template>
+            </div>
           </div>
         </template>
       </el-table-column>
@@ -430,6 +482,27 @@ function baseName(p: string): string {
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="previewVisible"
+      :title="previewTitle || '预览'"
+      align-center
+      class="thumb-preview-dialog"
+      destroy-on-close
+      width="min(920px, 94vw)"
+      @closed="previewUrl = ''"
+    >
+       <div :class="{ 'is-loading': previewBusy }" class="thumb-preview-body">
+         <span v-if="previewBusy" aria-hidden="true" class="thumb-preview-loading"></span>
+         <img
+          v-if="previewUrl"
+          :alt="previewTitle"
+          :src="previewUrl"
+          class="thumb-preview-img"
+        />
+        <div v-else class="thumb-preview-empty muted">暂无预览</div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -540,13 +613,133 @@ function baseName(p: string): string {
   background: color-mix(in srgb, var(--el-color-primary) 20%, transparent) !important;
 }
 
+.file-cell-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.file-thumb {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 8px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--app-fg-muted) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-fg-muted) 22%, transparent);
+  cursor: default;
+}
+
+.file-thumb.is-clickable {
+  cursor: zoom-in;
+}
+
+.file-thumb.is-clickable:hover {
+  border-color: color-mix(in srgb, var(--el-color-primary) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+}
+
+.file-thumb:disabled {
+  cursor: default;
+}
+
+.file-thumb.is-audio {
+  background: color-mix(in srgb, var(--el-color-warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--el-color-warning) 28%, transparent);
+}
+
+.file-thumb.is-loading {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--app-fg-muted) 10%, transparent) 25%,
+      color-mix(in srgb, var(--app-fg-muted) 18%, transparent) 37%,
+      color-mix(in srgb, var(--app-fg-muted) 10%, transparent) 63%
+    );
+  background-size: 400% 100%;
+  animation: thumb-shimmer 1.2s ease-in-out infinite;
+}
+
+.file-thumb.is-empty {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--app-fg-muted) 14%, transparent),
+      color-mix(in srgb, var(--app-fg-muted) 6%, transparent)
+    );
+}
+
+.file-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.thumb-preview-body {
+  position: relative;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--app-fg-muted) 8%, transparent);
+  border-radius: 10px;
+  overflow: auto;
+  max-height: min(78vh, 760px);
+}
+
+.thumb-preview-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: 2px solid color-mix(in srgb, var(--app-fg-muted) 25%, transparent);
+  border-top-color: var(--el-color-primary);
+  border-radius: 50%;
+  animation: thumb-preview-spin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes thumb-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.thumb-preview-img {
+  max-width: 100%;
+  max-height: min(78vh, 760px);
+  object-fit: contain;
+  display: block;
+}
+
+.thumb-preview-empty {
+  padding: 40px 16px;
+  font-size: var(--fs-sm);
+}
+
+@keyframes thumb-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
 .file-cell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
   min-width: 0;
-  padding: 2px 0;
+  flex: 1;
 }
 
 .file-name {

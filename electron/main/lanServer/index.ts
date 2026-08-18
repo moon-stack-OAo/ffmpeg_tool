@@ -1,54 +1,46 @@
-import http, {
-  type IncomingMessage,
-  type Server,
-  type ServerResponse
-} from 'http'
+import http, {type IncomingMessage, type Server, type ServerResponse} from 'http'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { app } from 'electron'
+import {app} from 'electron'
 import type {
-  AudioFormat,
-  CompressOptions,
-  CompressTask,
-  LanRemoteConfigInput,
-  LanStatus,
-  LanTaskView,
-  OutputFormat,
-  PresetId,
-  ProgressPayload,
-  TaskEndPayload,
-  TaskMode
+    AudioFormat,
+    CompressOptions,
+    CompressTask,
+    ImagePresetId,
+    LanRemoteConfigInput,
+    LanStatus,
+    LanTaskView,
+    OutputFormat,
+    PresetId,
+    ProgressPayload,
+    TaskEndPayload,
+    TaskMode
 } from '../../../shared/types'
 import {
-  DEFAULT_AUDIO_BITRATE,
-  DEFAULT_AUDIO_NAME_TEMPLATE,
-  DEFAULT_NAME_TEMPLATE,
-  DEFAULT_PRESETS,
-  VIDEO_EXTENSIONS
+    DEFAULT_AUDIO_BITRATE,
+    DEFAULT_IMAGE_PRESETS,
+    DEFAULT_PRESETS,
+    IMAGE_EXTENSIONS,
+    IMAGE_PRESET_OPTIONS,
+    VIDEO_EXTENSIONS
 } from '../../../shared/types'
-import { checkFfmpegAvailable } from '../ffmpeg'
-import { getSettings, saveSettings } from '../settings'
-import { taskQueue } from '../taskQueue'
-import {
-  MAX_UPLOAD_BYTES,
-  parseMultipart,
-  readJsonBody,
-  sanitizeFileName
-} from './multipart'
-import { hashPassword, verifyPassword } from './password'
-import { LoginRateLimiter } from './rateLimit'
-import {
-  SESSION_COOKIE,
-  SessionStore,
-  buildSetCookie,
-  parseCookie
-} from './session'
+import {checkFfmpegAvailable, extractVideoFrameJpeg} from '../ffmpeg'
+import {getImageEngineStatus, getImageJpegBuffer} from '../image'
+import {getSettings, saveSettings} from '../settings'
+import {taskQueue} from '../taskQueue'
+import {MAX_UPLOAD_BYTES, parseMultipart, readJsonBody, sanitizeFileName} from './multipart'
+import {hashPassword, verifyPassword} from './password'
+import {LoginRateLimiter} from './rateLimit'
+import {buildSetCookie, parseCookie, SESSION_COOKIE, SessionStore} from './session'
 
 /** 默认端口 */
 export const DEFAULT_LAN_PORT = 17890
 
-/** 允许的扩展名：视频 + 常见音频源 */
+/** 局域网输出命名：仅用时间戳，避免原文件名过长 */
+const LAN_NAME_TEMPLATE = '{date}_{time}'
+
+/** 允许的扩展名：视频 + 常见音频源 + 图片 */
 const ALLOWED_EXTENSIONS = new Set<string>([
   ...(VIDEO_EXTENSIONS as string[]),
   '.mp3',
@@ -58,8 +50,94 @@ const ALLOWED_EXTENSIONS = new Set<string>([
   '.flac',
   '.ogg',
   '.opus',
-  '.wma'
+  '.wma',
+  ...(IMAGE_EXTENSIONS as string[])
 ])
+
+const IMAGE_EXT_SET = new Set(
+  (IMAGE_EXTENSIONS as string[]).map((e) => e.toLowerCase())
+)
+const VIDEO_EXT_SET = new Set(
+  (VIDEO_EXTENSIONS as string[]).map((e) => e.toLowerCase())
+)
+
+/** 局域网任务列表缩略图最长边 */
+const LAN_THUMB_MAX_EDGE = 128
+/** 点击预览时允许的最大边长 */
+const LAN_PREVIEW_MAX_EDGE = 1600
+
+function parseThumbEdge(req: IncomingMessage, fallback: number): number {
+  try {
+    const u = new URL(req.url || '/', 'http://localhost')
+    const raw = u.searchParams.get('edge')
+    if (raw == null || raw === '') return fallback
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return fallback
+    return Math.max(64, Math.min(LAN_PREVIEW_MAX_EDGE, Math.floor(n)))
+  } catch {
+    return fallback
+  }
+}
+
+type ImageOutputFormat = 'jpeg' | 'png' | 'webp' | 'keep'
+
+function isImageExt(fileName: string): boolean {
+  return IMAGE_EXT_SET.has(path.extname(fileName).toLowerCase())
+}
+
+function isVideoExt(fileName: string): boolean {
+  return VIDEO_EXT_SET.has(path.extname(fileName).toLowerCase())
+}
+
+function taskHasThumbnail(task: CompressTask): boolean {
+  if (task.options?.mode === 'audio') return false
+  const p =
+    (typeof task.inputPath === 'string' && task.inputPath.trim()) ||
+    (Array.isArray(task.inputPaths) &&
+      task.inputPaths.find((x) => typeof x === 'string' && x.trim())) ||
+    ''
+  const name = p || task.fileName || ''
+  return isImageExt(name) || isVideoExt(name)
+}
+
+function resolveThumbSourcePath(task: CompressTask): string | null {
+  const candidates = [
+    ...(Array.isArray(task.inputPaths) ? task.inputPaths : []),
+    task.inputPath
+  ]
+  for (const raw of candidates) {
+    const p = typeof raw === 'string' ? raw.trim() : ''
+    if (!p) continue
+    if (!fs.existsSync(p)) continue
+    try {
+      if (!fs.statSync(p).isFile()) continue
+    } catch {
+      continue
+    }
+    if (isImageExt(p) || isVideoExt(p)) return path.resolve(p)
+  }
+  return null
+}
+
+function parseImagePresetId(raw: unknown): ImagePresetId | undefined {
+  if (
+    raw === 'optimize' ||
+    raw === 'standard' ||
+    raw === 'social' ||
+    raw === 'thumb' ||
+    raw === 'custom'
+  ) {
+    return raw
+  }
+  return undefined
+}
+
+function parseImageFormat(raw: unknown): ImageOutputFormat | undefined {
+  if (raw === 'jpeg' || raw === 'png' || raw === 'webp' || raw === 'keep') {
+    return raw
+  }
+  return undefined
+}
 
 /** 局域网任务内存表（含路径，不下发前端） */
 interface LanTaskRecord {
@@ -195,7 +273,8 @@ function toLanView(task: CompressTask): LanTaskView {
     speed: task.speed,
     etaSec: task.etaSec,
     mode: task.options?.mode,
-    downloadable
+    downloadable,
+    hasThumbnail: taskHasThumbnail(task)
   }
 }
 
@@ -225,6 +304,91 @@ function resolvePreset(presetId: PresetId): {
   }
 }
 
+function resolveOutputDir(settings: ReturnType<typeof getSettings>): string {
+  const outputDir =
+    settings.outputDir && settings.outputDir.trim()
+      ? settings.outputDir.trim()
+      : path.join(app.getPath('userData'), 'lan-outputs')
+
+  if (!fs.existsSync(outputDir)) {
+    try {
+      fs.mkdirSync(outputDir, { recursive: true })
+    } catch {
+      // 后续 enqueue 再报错
+    }
+  }
+  return outputDir
+}
+
+function buildLanImageOptions(params: {
+  imagePresetId?: ImagePresetId
+  imageFormat?: ImageOutputFormat
+  imageQuality?: number
+  imageMaxEdge?: number
+  imageStrip?: boolean
+}): CompressOptions {
+  const settings = getSettings()
+  const imagePresetId: ImagePresetId =
+    params.imagePresetId || 'standard'
+
+  let format: ImageOutputFormat = settings.imageFormat || 'jpeg'
+  let quality =
+    typeof settings.imageQuality === 'number' && Number.isFinite(settings.imageQuality)
+      ? Math.max(1, Math.min(100, Math.round(settings.imageQuality)))
+      : 80
+  let maxEdge =
+    typeof settings.imageMaxEdge === 'number' && Number.isFinite(settings.imageMaxEdge)
+      ? Math.max(0, Math.floor(settings.imageMaxEdge))
+      : 1920
+  let strip = typeof settings.imageStrip === 'boolean' ? settings.imageStrip : true
+
+  if (imagePresetId !== 'custom') {
+    const preset = DEFAULT_IMAGE_PRESETS[imagePresetId]
+    format = preset.format
+    quality = preset.quality
+    maxEdge = preset.maxEdge
+  } else {
+    if (params.imageFormat) format = params.imageFormat
+    if (
+      typeof params.imageQuality === 'number' &&
+      Number.isFinite(params.imageQuality)
+    ) {
+      quality = Math.max(1, Math.min(100, Math.round(params.imageQuality)))
+    }
+    if (
+      typeof params.imageMaxEdge === 'number' &&
+      Number.isFinite(params.imageMaxEdge)
+    ) {
+      maxEdge = Math.max(0, Math.floor(params.imageMaxEdge))
+    }
+    if (typeof params.imageStrip === 'boolean') {
+      strip = params.imageStrip
+    }
+  }
+
+  // 视频必填字段：图片任务仅作占位，执行走 image 分支
+  const videoBase = resolvePreset(settings.presetId || 'standard')
+
+  return {
+    presetId: settings.presetId || 'standard',
+    crf: videoBase.crf,
+    maxEdge: videoBase.maxEdge,
+    format: videoBase.format,
+    outputDir: resolveOutputDir(settings),
+    encoder: settings.encoder || 'auto',
+    nameTemplate: LAN_NAME_TEMPLATE,
+    outputDirMode: settings.outputDirMode || 'fixed',
+    mode: 'image',
+    fallbackToSoftware: true,
+    image: {
+      format,
+      quality,
+      maxEdge,
+      strip
+    }
+  }
+}
+
 function buildLanOptions(params: {
   mode?: TaskMode
   presetId?: PresetId
@@ -236,7 +400,16 @@ function buildLanOptions(params: {
   targetSizeMb?: number
   audioFormat?: AudioFormat
   audioBitrate?: string
+  imagePresetId?: ImagePresetId
+  imageFormat?: ImageOutputFormat
+  imageQuality?: number
+  imageMaxEdge?: number
+  imageStrip?: boolean
 }): CompressOptions {
+  if (params.mode === 'image') {
+    return buildLanImageOptions(params)
+  }
+
   const settings = getSettings()
   const mode: TaskMode = params.mode === 'audio' ? 'audio' : 'compress'
   const presetId: PresetId =
@@ -295,31 +468,14 @@ function buildLanOptions(params: {
       ? params.audioBitrate.trim()
       : settings.audioBitrate || DEFAULT_AUDIO_BITRATE
 
-  // 远程任务：编码器/水印/并发用本机设置；输出尊重用户 outputDir
-  const outputDir =
-    settings.outputDir && settings.outputDir.trim()
-      ? settings.outputDir.trim()
-      : path.join(app.getPath('userData'), 'lan-outputs')
-
-  if (!fs.existsSync(outputDir)) {
-    try {
-      fs.mkdirSync(outputDir, { recursive: true })
-    } catch {
-      // 后续 enqueue 再报错
-    }
-  }
-
   return {
     presetId,
     crf,
     maxEdge,
     format,
-    outputDir,
+    outputDir: resolveOutputDir(settings),
     encoder: settings.encoder || 'auto',
-    nameTemplate:
-      mode === 'audio'
-        ? settings.nameTemplate || DEFAULT_AUDIO_NAME_TEMPLATE
-        : settings.nameTemplate || DEFAULT_NAME_TEMPLATE,
+    nameTemplate: LAN_NAME_TEMPLATE,
     outputDirMode: settings.outputDirMode || 'fixed',
     targetSizeMb,
     twoPass: settings.twoPass,
@@ -450,6 +606,7 @@ function handleLogout(req: IncomingMessage, res: ServerResponse): void {
 function handleStatus(req: IncomingMessage, res: ServerResponse): void {
   const sess = getSession(req)
   const settings = getSettings()
+  const imageEngine = getImageEngineStatus()
   json(res, 200, {
     ok: true,
     product: '轻影',
@@ -462,9 +619,14 @@ function handleStatus(req: IncomingMessage, res: ServerResponse): void {
       name: p.name,
       description: p.description
     })),
+    imagePresets: IMAGE_PRESET_OPTIONS.map((p) => ({
+      id: p.value,
+      name: p.label
+    })),
     modes: [
       { value: 'compress', label: '视频压缩' },
-      { value: 'audio', label: '仅抽取音频' }
+      { value: 'audio', label: '仅抽取音频' },
+      { value: 'image', label: '图片压缩' }
     ],
     audioFormats: [
       { value: 'm4a', label: 'M4A' },
@@ -473,6 +635,13 @@ function handleStatus(req: IncomingMessage, res: ServerResponse): void {
     ],
     audioBitrates: ['128k', '192k', '256k', '320k'],
     videoFormats: ['mp4', 'mkv', 'mov', 'webm'],
+    imageFormats: [
+      { value: 'jpeg', label: 'JPEG' },
+      { value: 'png', label: 'PNG' },
+      { value: 'webp', label: 'WebP' },
+      { value: 'keep', label: '保持原格式' }
+    ],
+    imageEngineReady: !imageEngine.error,
     maxUploadMb: Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))
   })
 }
@@ -493,12 +662,6 @@ async function handleCreateTask(
   res: ServerResponse
 ): Promise<void> {
   if (!requireAuth(req, res)) return
-
-  const status = checkFfmpegAvailable()
-  if (!status.ready) {
-    json(res, 503, { ok: false, error: status.error || 'ffmpeg 未就绪' })
-    return
-  }
 
   ensureUploadsDir()
   let parsed
@@ -544,7 +707,61 @@ async function handleCreateTask(
     optRaw = { ...parsed.fields }
   }
 
-  const mode = optRaw.mode === 'audio' ? 'audio' : 'compress'
+  // 模式：显式 image/audio；上传图片扩展名时自动走图片压缩
+  let mode: TaskMode =
+    optRaw.mode === 'audio'
+      ? 'audio'
+      : optRaw.mode === 'image'
+        ? 'image'
+        : 'compress'
+  if (isImageExt(file.fileName)) {
+    if (mode === 'audio') {
+      try {
+        fs.unlinkSync(file.tempPath)
+      } catch {
+        // ignore
+      }
+      json(res, 400, { ok: false, error: '图片无法用于音频抽取，请选择「图片压缩」' })
+      return
+    }
+    mode = 'image'
+  } else if (mode === 'image') {
+    try {
+      fs.unlinkSync(file.tempPath)
+    } catch {
+      // ignore
+    }
+    json(res, 400, { ok: false, error: '图片压缩仅支持图片文件' })
+    return
+  }
+
+  if (mode === 'image') {
+    const imageEngine = getImageEngineStatus()
+    if (imageEngine.error) {
+      try {
+        fs.unlinkSync(file.tempPath)
+      } catch {
+        // ignore
+      }
+      json(res, 503, {
+        ok: false,
+        error: imageEngine.error || '图片引擎未就绪'
+      })
+      return
+    }
+  } else {
+    const status = checkFfmpegAvailable()
+    if (!status.ready) {
+      try {
+        fs.unlinkSync(file.tempPath)
+      } catch {
+        // ignore
+      }
+      json(res, 503, { ok: false, error: status.error || 'ffmpeg 未就绪' })
+      return
+    }
+  }
+
   const presetId = (optRaw.presetId as PresetId) || undefined
   const format = optRaw.format as OutputFormat | undefined
   const maxEdge =
@@ -569,6 +786,54 @@ async function handleCreateTask(
   const audioBitrate =
     typeof optRaw.audioBitrate === 'string' ? optRaw.audioBitrate : undefined
 
+  const imageObj =
+    optRaw.image && typeof optRaw.image === 'object'
+      ? (optRaw.image as Record<string, unknown>)
+      : null
+  const imagePresetId =
+    parseImagePresetId(optRaw.imagePresetId) ||
+    parseImagePresetId(optRaw.presetId)
+  const imageFormat =
+    parseImageFormat(imageObj?.format) ||
+    parseImageFormat(optRaw.imageFormat) ||
+    parseImageFormat(optRaw.format)
+  const imageQualityRaw =
+    imageObj?.quality != null
+      ? imageObj.quality
+      : optRaw.imageQuality != null
+        ? optRaw.imageQuality
+        : optRaw.quality
+  const imageQuality =
+    typeof imageQualityRaw === 'number'
+      ? imageQualityRaw
+      : imageQualityRaw != null
+        ? Number(imageQualityRaw)
+        : undefined
+  const imageMaxEdgeRaw =
+    imageObj?.maxEdge != null
+      ? imageObj.maxEdge
+      : optRaw.imageMaxEdge != null
+        ? optRaw.imageMaxEdge
+        : mode === 'image'
+          ? optRaw.maxEdge
+          : undefined
+  const imageMaxEdge =
+    typeof imageMaxEdgeRaw === 'number'
+      ? imageMaxEdgeRaw
+      : imageMaxEdgeRaw != null
+        ? Number(imageMaxEdgeRaw)
+        : undefined
+  const imageStripRaw =
+    imageObj?.strip != null ? imageObj.strip : optRaw.imageStrip
+  const imageStrip =
+    typeof imageStripRaw === 'boolean'
+      ? imageStripRaw
+      : imageStripRaw === 'true' || imageStripRaw === '1'
+        ? true
+        : imageStripRaw === 'false' || imageStripRaw === '0'
+          ? false
+          : undefined
+
   const options = buildLanOptions({
     mode,
     presetId,
@@ -577,7 +842,12 @@ async function handleCreateTask(
     crf,
     targetSizeMb,
     audioFormat,
-    audioBitrate
+    audioBitrate,
+    imagePresetId,
+    imageFormat,
+    imageQuality,
+    imageMaxEdge,
+    imageStrip
   })
 
   // 固定文件名到上传目录（已是 sanitize 后）
@@ -618,6 +888,77 @@ async function handleCreateTask(
   })
 
   json(res, 200, { ok: true, task: toLanView(lanTasks.get(taskId)!.task) })
+}
+
+async function handleThumbnail(
+  req: IncomingMessage,
+  res: ServerResponse,
+  taskId: string
+): Promise<void> {
+  if (!requireAuth(req, res)) return
+
+  if (!taskId || taskId.includes('..') || taskId.includes('/') || taskId.includes('\\')) {
+    json(res, 400, { ok: false, error: '无效任务 ID' })
+    return
+  }
+
+  const rec = lanTasks.get(taskId)
+  if (!rec) {
+    json(res, 404, { ok: false, error: '任务不存在' })
+    return
+  }
+
+  const t = rec.task
+  if (t.options?.mode === 'audio') {
+    json(res, 404, { ok: false, error: '音频任务无缩略图' })
+    return
+  }
+
+  const src = resolveThumbSourcePath(t)
+  if (!src) {
+    json(res, 404, { ok: false, error: '源文件不可用' })
+    return
+  }
+
+  const edge = parseThumbEdge(req, LAN_THUMB_MAX_EDGE)
+
+  try {
+    let buffer: Buffer | undefined
+    if (isImageExt(src)) {
+      const r = await getImageJpegBuffer(src, edge)
+      if (!r.ok || !r.buffer) {
+        json(res, 500, { ok: false, error: r.error || '生成缩略图失败' })
+        return
+      }
+      buffer = r.buffer
+    } else if (isVideoExt(src)) {
+      const r = await extractVideoFrameJpeg({
+        path: src,
+        timeSec: 1,
+        maxEdge: edge
+      })
+      if (!r.ok || !r.buffer) {
+        json(res, 500, { ok: false, error: r.error || '抽帧失败' })
+        return
+      }
+      buffer = r.buffer
+    } else {
+      json(res, 404, { ok: false, error: '不支持的媒体类型' })
+      return
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': buffer.length,
+      'Cache-Control': 'private, max-age=300'
+    })
+    res.end(buffer)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!res.headersSent) {
+      json(res, 500, { ok: false, error: msg || '生成缩略图失败' })
+    }
+  }
 }
 
 function handleDownload(
@@ -691,7 +1032,15 @@ function guessMime(name: string): string {
     '.mp3': 'audio/mpeg',
     '.m4a': 'audio/mp4',
     '.opus': 'audio/opus',
-    '.wav': 'audio/wav'
+    '.wav': 'audio/wav',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.gif': 'image/gif',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff'
   }
   return map[ext] || 'application/octet-stream'
 }
@@ -800,6 +1149,12 @@ async function handleRequest(
     const dl = /^\/api\/tasks\/([^/]+)\/download$/.exec(pathOnly)
     if (dl && method === 'GET') {
       handleDownload(req, res, decodeURIComponent(dl[1]))
+      return
+    }
+
+    const thumb = /^\/api\/tasks\/([^/]+)\/thumbnail$/.exec(pathOnly)
+    if (thumb && method === 'GET') {
+      await handleThumbnail(req, res, decodeURIComponent(thumb[1]))
       return
     }
 

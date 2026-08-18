@@ -1,9 +1,9 @@
-import { spawn } from 'child_process'
+import {spawn} from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import { VIDEO_EXTENSIONS } from '../../../shared/types'
-import { getFfmpegPath, getFfprobePath } from './bin'
-import { checkSharpReady } from '../image/bin'
+import {VIDEO_EXTENSIONS} from '../../../shared/types'
+import {getFfmpegPath, getFfprobePath} from './bin'
+import {checkSharpReady} from '../image/bin'
 
 const VIDEO_EXT_SET = new Set(
   (VIDEO_EXTENSIONS as string[]).map((e) => e.toLowerCase())
@@ -241,14 +241,22 @@ function extractJpegBuffer(
   })
 }
 
+export interface ExtractVideoFrameJpegResult {
+  ok: boolean
+  buffer?: Buffer
+  width?: number
+  height?: number
+  previewWidth?: number
+  previewHeight?: number
+  error?: string
+}
+
 /**
- * 从视频抽取一帧预览
- * - width/height：源视频显示尺寸（用于裁切坐标）
- * - dataUrl：jpeg 预览（可按 maxEdge 缩小）
+ * 从视频抽取一帧 JPEG Buffer（任务列表缩略图 / 局域网接口复用）
  */
-export async function extractVideoFrame(
+export async function extractVideoFrameJpeg(
   opts: ExtractVideoFrameOpts
-): Promise<ExtractVideoFrameResult> {
+): Promise<ExtractVideoFrameJpegResult> {
   const filePath = typeof opts?.path === 'string' ? opts.path.trim() : ''
   const pathErr = validateVideoPath(filePath)
   if (pathErr) return { ok: false, error: pathErr }
@@ -312,10 +320,9 @@ export async function extractVideoFrame(
       info: { width: number; height: number }
     }
 
-    const b64 = result.data.toString('base64')
     return {
       ok: true,
-      dataUrl: `data:image/jpeg;base64,${b64}`,
+      buffer: result.data,
       width: meta.width,
       height: meta.height,
       previewWidth: result.info.width,
@@ -324,5 +331,27 @@ export async function extractVideoFrame(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, error: msg || '抽帧失败' }
+  }
+}
+
+/**
+ * 从视频抽取一帧预览
+ * - width/height：源视频显示尺寸（用于裁切坐标）
+ * - dataUrl：jpeg 预览（可按 maxEdge 缩小）
+ */
+export async function extractVideoFrame(
+  opts: ExtractVideoFrameOpts
+): Promise<ExtractVideoFrameResult> {
+  const r = await extractVideoFrameJpeg(opts)
+  if (!r.ok || !r.buffer) {
+    return { ok: false, error: r.error || '抽帧失败' }
+  }
+  return {
+    ok: true,
+    dataUrl: `data:image/jpeg;base64,${r.buffer.toString('base64')}`,
+    width: r.width,
+    height: r.height,
+    previewWidth: r.previewWidth,
+    previewHeight: r.previewHeight
   }
 }

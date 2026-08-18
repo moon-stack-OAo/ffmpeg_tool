@@ -541,6 +541,11 @@ export interface UpdateStatusPayload {
   transferred?: number
   total?: number
   bytesPerSecond?: number
+  /**
+   * 静默检查（如定时轮询）：更新状态但不自动弹窗 / 不弹 Toast
+   * 启动检查与手动检查为 false/缺省
+   */
+  silent?: boolean
 }
 
 /** 版本信息 */

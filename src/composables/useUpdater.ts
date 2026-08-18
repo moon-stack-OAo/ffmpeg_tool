@@ -13,6 +13,7 @@ export function useUpdater() {
 
   function applyUpdateStatus(payload: UpdateStatusPayload): void {
     const prev = updateInfo.value
+    const silent = Boolean(payload.silent)
     updateInfo.value = {
       ...prev,
       ...payload,
@@ -27,16 +28,19 @@ export function useUpdater() {
       // 取消下载回到 available 时保持弹窗打开
       if (payload.message?.includes('取消') && updateDialogVisible.value) {
         ElMessage.info(payload.message)
-      } else {
+      } else if (!silent) {
+        // 启动检查 / 手动检查：弹窗；定时静默检查只更新标题栏 NEW
         updateDialogVisible.value = true
       }
     } else if (payload.state === 'downloaded') {
       updateDialogVisible.value = true
-      ElMessage.success(payload.message || '更新已下载')
+      if (!silent) ElMessage.success(payload.message || '更新已下载')
     } else if (payload.state === 'error') {
-      updateDialogVisible.value = true
-      ElMessage.error(payload.message || '更新失败')
-    } else if (payload.state === 'not-available' && updateDialogVisible.value) {
+      if (!silent) {
+        updateDialogVisible.value = true
+        ElMessage.error(payload.message || '更新失败')
+      }
+    } else if (payload.state === 'not-available' && updateDialogVisible.value && !silent) {
       ElMessage.success(payload.message || '已是最新版本')
     }
   }

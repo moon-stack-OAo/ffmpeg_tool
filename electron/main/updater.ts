@@ -13,11 +13,18 @@ let initialized = false
 let updateDownloaded = false
 /** 防止重复 check */
 let checking = false
+/** 当前一轮检查是否静默（定时轮询） */
+let silentCheck = false
+/** 定时检查句柄 */
+let periodicTimer: ReturnType<typeof setInterval> | null = null
 /** 当前下载取消令牌 */
 let downloadToken: CancellationToken | null = null
 /** 最近一次可用更新版本（取消/失败后仍可再下） */
 let lastAvailableVersion = ''
 let lastReleaseNotes: string | undefined
+
+/** 每小时静默检查一次 */
+const PERIODIC_CHECK_MS = 60 * 60 * 1000
 
 function send(payload: UpdateStatusPayload): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -118,7 +125,11 @@ export function initAutoUpdater(win: BrowserWindow): void {
 
   autoUpdater.on('checking-for-update', () => {
     checking = true
-    send({ state: 'checking', message: '正在检查更新…' })
+    send({
+      state: 'checking',
+      message: '正在检查更新…',
+      silent: silentCheck
+    })
   })
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
@@ -130,7 +141,8 @@ export function initAutoUpdater(win: BrowserWindow): void {
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: lastReleaseNotes,
-      message: `发现新版本 v${info.version}`
+      message: `发现新版本 v${info.version}`,
+      silent: silentCheck
     })
   })
 
@@ -139,11 +151,13 @@ export function initAutoUpdater(win: BrowserWindow): void {
     send({
       state: 'not-available',
       version: info.version,
-      message: `当前已是最新版本 v${info.version}`
+      message: `当前已是最新版本 v${info.version}`,
+      silent: silentCheck
     })
   })
 
   autoUpdater.on('download-progress', (p: ProgressInfo) => {
+    silentCheck = false
     send({
       state: 'downloading',
       version: lastAvailableVersion || undefined,
@@ -157,6 +171,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
     downloadToken = null
     updateDownloaded = true
+    silentCheck = false
     lastAvailableVersion = info.version
     send({
       state: 'downloaded',
@@ -168,6 +183,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
 
   autoUpdater.on('update-cancelled', (info: UpdateInfo) => {
     downloadToken = null
+    silentCheck = false
     send({
       state: 'available',
       version: info.version || lastAvailableVersion || undefined,
@@ -180,6 +196,7 @@ export function initAutoUpdater(win: BrowserWindow): void {
     checking = false
     if (isCancelError(err)) {
       downloadToken = null
+      silentCheck = false
       send({
         state: 'available',
         version: lastAvailableVersion || undefined,
@@ -193,13 +210,19 @@ export function initAutoUpdater(win: BrowserWindow): void {
       state: 'error',
       version: lastAvailableVersion || undefined,
       releaseNotes: lastReleaseNotes,
-      message: mapUpdateError(err)
+      message: mapUpdateError(err),
+      silent: silentCheck
     })
   })
 
+  // 启动约 4 秒后检查一次（可弹窗）；之后每小时静默检查
   setTimeout(() => {
-    void checkForUpdates(false)
+    void checkForUpdates(false, { silent: false })
   }, 4000)
+  if (periodicTimer) clearInterval(periodicTimer)
+  periodicTimer = setInterval(() => {
+    void checkForUpdates(false, { silent: true })
+  }, PERIODIC_CHECK_MS)
 }
 
 function normalizeReleaseNotes(
@@ -213,13 +236,19 @@ function normalizeReleaseNotes(
   return undefined
 }
 
-/** 检查更新 */
-export async function checkForUpdates(manual = true): Promise<UpdateStatusPayload> {
+/** 检查更新；silent 时仅更新状态，前端不自动弹窗 */
+export async function checkForUpdates(
+  manual = true,
+  options?: { silent?: boolean }
+): Promise<UpdateStatusPayload> {
+  const silent = Boolean(options?.silent) && !manual
+
   if (!isPackaged()) {
     const payload: UpdateStatusPayload = {
       state: 'idle',
       message: '开发模式不检查更新，请使用打包后的安装包验证',
-      currentVersion: app.getVersion()
+      currentVersion: app.getVersion(),
+      silent
     }
     if (manual) send(payload)
     return payload
@@ -230,7 +259,8 @@ export async function checkForUpdates(manual = true): Promise<UpdateStatusPayloa
       state: 'downloading',
       message: '正在下载更新，请先取消下载后再检查',
       currentVersion: app.getVersion(),
-      version: lastAvailableVersion || undefined
+      version: lastAvailableVersion || undefined,
+      silent
     }
   }
 
@@ -238,9 +268,22 @@ export async function checkForUpdates(manual = true): Promise<UpdateStatusPayloa
     return {
       state: 'checking',
       message: '正在检查更新…',
-      currentVersion: app.getVersion()
+      currentVersion: app.getVersion(),
+      silent
     }
   }
+
+  // 已下载完成时，定时静默检查不再打扰
+  if (silent && updateDownloaded) {
+    return {
+      state: 'downloaded',
+      version: lastAvailableVersion || undefined,
+      currentVersion: app.getVersion(),
+      silent: true
+    }
+  }
+
+  silentCheck = silent
 
   try {
     const result = await autoUpdater.checkForUpdates()
@@ -249,7 +292,8 @@ export async function checkForUpdates(manual = true): Promise<UpdateStatusPayloa
       state: 'checking',
       version,
       currentVersion: app.getVersion(),
-      message: '已发起检查'
+      message: '已发起检查',
+      silent
     }
   } catch (err) {
     const message = mapUpdateError(err)
@@ -257,7 +301,8 @@ export async function checkForUpdates(manual = true): Promise<UpdateStatusPayloa
       state: 'error',
       message,
       currentVersion: app.getVersion(),
-      version: lastAvailableVersion || undefined
+      version: lastAvailableVersion || undefined,
+      silent
     }
     send(payload)
     return payload

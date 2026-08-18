@@ -6,6 +6,7 @@ import type {
   ImageProcessOptions,
   LanRemoteConfigInput,
   ProgressPayload,
+  SelectFilesOptions,
   TaskEndPayload,
   TrayCommand,
   UpdateStatusPayload
@@ -214,7 +215,8 @@ function installDropCapture(): void {
 installDropCapture()
 
 const api: ElectronAPI = {
-  selectFiles: () => ipcRenderer.invoke(IpcChannels.SELECT_FILES),
+  selectFiles: (opts?: SelectFilesOptions) =>
+    ipcRenderer.invoke(IpcChannels.SELECT_FILES, opts),
   selectDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke(IpcChannels.SELECT_DIR, defaultPath),
   selectImage: () => ipcRenderer.invoke(IpcChannels.SELECT_IMAGE),

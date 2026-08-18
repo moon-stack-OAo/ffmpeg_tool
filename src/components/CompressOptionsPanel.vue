@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
 import {
@@ -37,6 +37,10 @@ import {
   type ScalePadMode,
   TASK_MODE_OPTIONS,
   type TaskMode,
+  TOOL_GROUP_MODES,
+  TOOL_GROUP_OPTIONS,
+  type ToolGroup,
+  toolGroupOfMode,
   VIDEO_EXTENSIONS,
   WATERMARK_MODE_OPTIONS,
   WATERMARK_POSITION_OPTIONS,
@@ -121,6 +125,9 @@ const props = withDefaults(
     composeFitIntroOutro: boolean
     /** 可视化裁切预览路径（任务 inputPath，可空） */
     cropPreviewPath?: string
+    /** 多任务全局草稿下裁切/混剪危险提示 */
+    showCropComposeWarning?: boolean
+    cropComposeWarningText?: string
     /** 分辨率缩放模式（custom） */
     scaleMode: ScaleMode
     outWidth: number
@@ -134,7 +141,9 @@ const props = withDefaults(
     }
   }>(),
   {
-    cropPreviewPath: ''
+    cropPreviewPath: '',
+    showCropComposeWarning: false,
+    cropComposeWarningText: ''
   }
 )
 
@@ -208,6 +217,53 @@ const emit = defineEmits<{
 const advancedOpen = ref(false)
 /** 视频画面裁切折叠 */
 const videoCropOpen = ref(false)
+
+/** 工具分组（视频 / 图片 / 合成） */
+const toolGroup = ref<ToolGroup>(toolGroupOfMode(props.taskMode))
+
+watch(
+  () => props.taskMode,
+  (mode) => {
+    toolGroup.value = toolGroupOfMode(mode)
+  }
+)
+
+const secondaryModeOptions = computed(() => {
+  const modes = TOOL_GROUP_MODES[toolGroup.value] || []
+  return TASK_MODE_OPTIONS.filter((o) => modes.includes(o.value))
+})
+
+function onToolGroupChange(v: string | number | boolean | undefined): void {
+  const g = (v as ToolGroup) || 'video'
+  toolGroup.value = g
+  const modes = TOOL_GROUP_MODES[g] || []
+  if (!modes.length) return
+  if (modes.includes(props.taskMode)) return
+  emit('taskModeChange', modes[0])
+}
+
+/** 编码器探测简短 chips */
+const encoderChips = computed(() => {
+  const info = props.encoderInfo
+  if (!info) return [] as Array<{ key: string; ok: boolean; label: string }>
+  return [
+    { key: 'nvenc', ok: !!info.nvenc, label: 'NVENC' },
+    { key: 'qsv', ok: !!info.qsv, label: 'QSV' },
+    { key: 'amf', ok: !!info.amf, label: 'AMF' },
+    {
+      key: 'vt',
+      ok: !!info.videotoolbox,
+      label: 'VT'
+    }
+  ]
+})
+
+const hasComposeAssets = computed(() => {
+  const intro = (props.composeIntroPath || '').trim()
+  const outro = (props.composeOutroPath || '').trim()
+  const overlay = (props.composeOverlayPath || '').trim()
+  return !!(intro || outro || overlay)
+})
 
 const cropDialogOpen = ref(false)
 const cropDialogPath = ref('')
@@ -417,17 +473,43 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
       <el-button size="small" @click="emit('applyToPending')">应用到待处理</el-button>
     </div>
 
-    <!-- 第一行：模式 / 预设（或音频 / 图片参数） -->
+    <el-alert
+      v-if="showCropComposeWarning"
+      class="crop-compose-alert"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="cropComposeWarningText || '当前裁切/混剪参数将应用于全部待处理任务'"
+    />
+
+    <!-- 第一行：工具分组 / 任务模式 / 预设（或音频 / 图片参数） -->
     <div class="opt-row opt-row-wrap">
       <div class="opt-item">
-        <span class="label">任务模式</span>
+        <span class="label">工具</span>
+        <el-radio-group
+          :model-value="toolGroup"
+          size="small"
+          @change="onToolGroupChange"
+        >
+          <el-radio-button
+            v-for="opt in TOOL_GROUP_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div v-if="secondaryModeOptions.length > 1" class="opt-item">
+        <span class="label">模式</span>
         <el-radio-group
           :model-value="taskMode"
           size="small"
           @change="(v: string | number | boolean | undefined) => emit('taskModeChange', v as TaskMode)"
         >
           <el-radio-button
-            v-for="opt in TASK_MODE_OPTIONS"
+            v-for="opt in secondaryModeOptions"
             :key="opt.value"
             :value="opt.value"
           >
@@ -534,8 +616,36 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
             size="small"
             @change="(v: string | number | boolean) => emit('concatPreferCopyChange', Boolean(v))"
           />
-          <span class="hint-inline">更快，要求编码一致；失败将重编码</span>
+          <span class="hint-inline">更快，要求编码一致</span>
         </div>
+        <div class="opt-item" :title="encoderTitle(false, encoderInfo)">
+          <span class="label">编码器</span>
+          <el-select
+            :model-value="encoder"
+            size="small"
+            class="w-4xl"
+            @change="(v: EncoderId) => emit('encoderChange', v)"
+          >
+            <el-option
+              v-for="opt in ENCODER_OPTIONS"
+              :key="opt.value"
+              :label="encoderOptionLabel(opt)"
+              :value="opt.value"
+              :disabled="!isEncoderOptionAvailable(opt.value)"
+            />
+          </el-select>
+          <span v-if="encoderChips.length" class="encoder-chips">
+            <span
+              v-for="c in encoderChips"
+              :key="c.key"
+              class="encoder-chip"
+              :class="{ ok: c.ok, bad: !c.ok }"
+            >
+              {{ c.label }}{{ c.ok ? '✓' : '–' }}
+            </span>
+          </span>
+        </div>
+        <span class="hint-inline">流复制失败时将按此编码器重编码</span>
       </template>
 
       <template v-else-if="isMediaComposeMode">
@@ -548,6 +658,34 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
           />
           <span class="hint-inline">主视频从任务列表添加；图片在此选择</span>
         </div>
+        <div class="opt-item" :title="encoderTitle(false, encoderInfo)">
+          <span class="label">编码器</span>
+          <el-select
+            :model-value="encoder"
+            size="small"
+            class="w-4xl"
+            @change="(v: EncoderId) => emit('encoderChange', v)"
+          >
+            <el-option
+              v-for="opt in ENCODER_OPTIONS"
+              :key="opt.value"
+              :label="encoderOptionLabel(opt)"
+              :value="opt.value"
+              :disabled="!isEncoderOptionAvailable(opt.value)"
+            />
+          </el-select>
+          <span v-if="encoderChips.length" class="encoder-chips">
+            <span
+              v-for="c in encoderChips"
+              :key="c.key"
+              class="encoder-chip"
+              :class="{ ok: c.ok, bad: !c.ok }"
+            >
+              {{ c.label }}{{ c.ok ? '✓' : '–' }}
+            </span>
+          </span>
+        </div>
+        <span class="hint-inline">重编码时使用</span>
       </template>
 
       <template v-else>
@@ -623,6 +761,14 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
 
     <!-- 图+视频混剪选项 -->
     <template v-if="isMediaComposeMode">
+      <el-alert
+        v-if="!hasComposeAssets"
+        class="compose-empty-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="请先选择片头、片尾或叠加图，再添加主视频并启动任务"
+      />
       <div class="opt-row opt-row-wrap">
         <div class="opt-item opt-item-fill">
           <span class="label">片头图</span>
@@ -912,7 +1058,11 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
         @click="advancedOpen = !advancedOpen"
       >
         <span class="opt-advanced-chevron" :class="{ open: advancedOpen }">▸</span>
-        <span>高级选项</span>
+        <span>{{
+          isAudioMode
+            ? '高级选项'
+            : '高级选项（水印 / 画面裁切 / 目标体积…）'
+        }}</span>
         <span class="muted">{{ isAudioMode ? '并发 · 裁剪' : '编码 · 画面 · 水印 · 音频 · 裁剪' }}</span>
       </button>
 
@@ -987,6 +1137,16 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                   :disabled="!isEncoderOptionAvailable(opt.value)"
                 />
               </el-select>
+              <span v-if="encoderChips.length" class="encoder-chips">
+                <span
+                  v-for="c in encoderChips"
+                  :key="c.key"
+                  class="encoder-chip"
+                  :class="{ ok: c.ok, bad: !c.ok }"
+                >
+                  {{ c.label }}{{ c.ok ? '✓' : '–' }}
+                </span>
+              </span>
             </div>
 
             <template v-if="isVideoCompressMode">
@@ -1117,10 +1277,6 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
               <div class="opt-divider" aria-hidden="true" />
 
               <div class="opt-item">
-                <span class="label">CRF</span>
-                <el-input-number v-model="custom.crf" :max="51" :min="0" :step="1" size="small" />
-              </div>
-              <div class="opt-item">
                 <span class="label">缩放模式</span>
                 <el-select
                   :model-value="scaleMode"
@@ -1135,6 +1291,10 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
                     :value="opt.value"
                   />
                 </el-select>
+              </div>
+              <div class="opt-item">
+                <span class="label">CRF</span>
+                <el-input-number v-model="custom.crf" :max="51" :min="0" :step="1" size="small" />
               </div>
               <div v-if="scaleMode === 'maxEdge'" class="opt-item">
                 <span class="label">最长边</span>
@@ -1537,6 +1697,38 @@ function encoderOptionLabel(opt: { value: EncoderId; label: string }): string {
   gap: var(--space-3);
   margin-bottom: 10px;
   min-width: 0;
+}
+
+.crop-compose-alert,
+.compose-empty-alert {
+  margin-bottom: 10px;
+}
+
+.encoder-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: 2px;
+}
+
+.encoder-chip {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 18px;
+  background: color-mix(in srgb, var(--app-fg) 8%, transparent);
+  color: var(--app-fg-muted);
+}
+
+.encoder-chip.ok {
+  color: var(--status-ok, var(--el-color-success));
+  background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
+}
+
+.encoder-chip.bad {
+  opacity: 0.65;
 }
 
 .options-header-left {

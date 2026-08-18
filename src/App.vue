@@ -1,7 +1,15 @@
 <script lang="ts" setup>
-import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
-import type {AppInfo, ImageEngineStatus, LanStatus} from '@shared/types'
+import type {
+  AppInfo,
+  CompressOptions,
+  ImageEngineStatus,
+  LanStatus,
+  MediaComposeOptions,
+  TaskMode,
+  WatermarkPosition
+} from '@shared/types'
 import {IMAGE_EXTENSIONS} from '@shared/types'
 import TitleBar from './components/TitleBar.vue'
 import CompressOptionsPanel from './components/CompressOptionsPanel.vue'
@@ -182,12 +190,19 @@ const {
 
 const {
   tasks,
+  selectedTaskId,
+  selectedTask,
+  selectTask,
   lastDropOkAt,
   hasPending,
+  pendingCount,
   hasActive,
   sizeSummary,
   addFiles,
   onSelectFiles,
+  removeStitchInput,
+  appendStitchInputs,
+  reorderStitchInput,
   startOne,
   startAll,
   cancelOne,
@@ -198,7 +213,10 @@ const {
   openOutput,
   showInFolder,
   applyOptionsToPending,
+  updateTask,
   syncPendingOptions,
+  getMismatchedPendingCount,
+  removeMismatchedPending,
   loadTasks,
   subscribe: subscribeTasks
 } = useTasks({
@@ -210,9 +228,142 @@ const {
   taskMode
 })
 
-syncPendingOptionsRef = syncPendingOptions
+syncPendingOptionsRef = () => syncPendingOptions()
 
-/** 可视化裁切预览：取第一个 pending/failed 任务路径 */
+/** 加载任务 options 到面板时抑制写回，避免 watch 循环 */
+let suppressCropComposeWriteback = false
+
+function loadCropComposeFromTask(opts?: CompressOptions | null): void {
+  suppressCropComposeWriteback = true
+  try {
+    const crop = opts?.crop || opts?.image?.crop
+    if (crop && crop.w > 0 && crop.h > 0) {
+      cropX.value = crop.x ?? 0
+      cropY.value = crop.y ?? 0
+      cropW.value = crop.w
+      cropH.value = crop.h
+    } else {
+      cropX.value = 0
+      cropY.value = 0
+      cropW.value = 0
+      cropH.value = 0
+    }
+
+    const c = opts?.compose
+    composeIntroPath.value = c?.intro?.imagePath || ''
+    composeIntroDuration.value =
+      typeof c?.intro?.durationSec === 'number' && c.intro.durationSec > 0
+        ? c.intro.durationSec
+        : 3
+    composeOutroPath.value = c?.outro?.imagePath || ''
+    composeOutroDuration.value =
+      typeof c?.outro?.durationSec === 'number' && c.outro.durationSec > 0
+        ? c.outro.durationSec
+        : 3
+    composeOverlayPath.value = c?.overlay?.imagePath || ''
+    composeOverlayPosition.value =
+      (c?.overlay?.position as WatermarkPosition) || 'br'
+    composeOverlayOpacity.value =
+      typeof c?.overlay?.opacity === 'number' && Number.isFinite(c.overlay.opacity)
+        ? c.overlay.opacity
+        : 0.8
+    composeOverlayScalePercent.value =
+      typeof c?.overlay?.scalePercent === 'number' &&
+      Number.isFinite(c.overlay.scalePercent)
+        ? c.overlay.scalePercent
+        : 15
+    composeOverlayMargin.value =
+      typeof c?.overlay?.marginX === 'number' && Number.isFinite(c.overlay.marginX)
+        ? c.overlay.marginX
+        : 16
+    composeOverlayStartSec.value =
+      typeof c?.overlay?.startSec === 'number' && c.overlay.startSec > 0
+        ? c.overlay.startSec
+        : 0
+    composeOverlayEndSec.value =
+      typeof c?.overlay?.endSec === 'number' && c.overlay.endSec > 0
+        ? c.overlay.endSec
+        : 0
+    composeFitIntroOutro.value = c?.fitIntroOutro !== false
+  } finally {
+    // nextTick 更稳，但同步标志在同一 tick 内写回由 suppress 挡住即可
+    suppressCropComposeWriteback = false
+  }
+}
+
+function buildCropComposePatch(): {
+  crop?: CompressOptions['crop']
+  compose?: MediaComposeOptions
+  imageCrop?: CompressOptions['crop']
+} {
+  const draft = buildOptions()
+  return {
+    crop: draft.crop,
+    compose: draft.compose,
+    imageCrop: draft.image?.crop || draft.crop
+  }
+}
+
+/** 将当前面板 crop/compose 写回选中的 pending/failed 任务 */
+function writeCropComposeToSelectedTask(): void {
+  if (suppressCropComposeWriteback) return
+  const t = selectedTask.value
+  if (!t || (t.status !== 'pending' && t.status !== 'failed')) return
+
+  const patch = buildCropComposePatch()
+  const prev = t.options || ({} as CompressOptions)
+  const next: CompressOptions = { ...prev }
+
+  if (patch.crop) {
+    next.crop = patch.crop
+  } else {
+    delete next.crop
+  }
+
+  if (patch.compose && Object.keys(patch.compose).length > 0) {
+    next.compose = patch.compose
+  } else {
+    delete next.compose
+  }
+
+  if (prev.image || patch.imageCrop) {
+    const img = { ...(prev.image || {}) }
+    if (patch.imageCrop) {
+      img.crop = patch.imageCrop
+    } else {
+      delete img.crop
+    }
+    next.image = img
+  }
+
+  updateTask(t.id, { options: next, outputPath: '' })
+}
+
+watch(selectedTask, (t) => {
+  if (!t || (t.status !== 'pending' && t.status !== 'failed')) return
+  loadCropComposeFromTask(t.options)
+})
+
+/** 是否显示「裁切/混剪将应用于全部待处理」危险提示 */
+const showCropComposeGlobalWarning = computed(() => {
+  if (pendingCount.value <= 1) return false
+  // 选中可编辑任务时为任务级编辑，不提示
+  const t = selectedTask.value
+  if (t && (t.status === 'pending' || t.status === 'failed')) return false
+
+  const cropActive = cropW.value > 0 && cropH.value > 0
+  const composeActive =
+    !!composeIntroPath.value.trim() ||
+    !!composeOutroPath.value.trim() ||
+    !!composeOverlayPath.value.trim()
+  return cropActive || composeActive
+})
+
+const cropComposeWarningText = computed(
+  () => `当前裁切/混剪参数将应用于全部 ${pendingCount.value} 个待处理任务`
+)
+
+/** 可视化裁切预览：优先选中任务，否则第一个 pending/failed */
 const cropPreviewPath = computed(() => {
   const mode = taskMode.value
   if (mode !== 'image-crop' && mode !== 'compress') return ''
@@ -220,30 +371,146 @@ const cropPreviewPath = computed(() => {
   const imageExts = new Set(
     (IMAGE_EXTENSIONS as string[]).map((e) => e.toLowerCase())
   )
+
+  const tryPath = (p: string): string => {
+    const path = (p || '').trim()
+    if (!path) return ''
+    const ext = path.includes('.')
+      ? path.slice(path.lastIndexOf('.')).toLowerCase()
+      : ''
+    if (preferImage) {
+      return imageExts.has(ext) ? path : ''
+    }
+    return path
+  }
+
+  const sel = selectedTask.value
+  if (sel) {
+    const fromSel = tryPath(sel.inputPath || '')
+    if (fromSel) return fromSel
+  }
+
   const candidates = tasks.value.filter(
     (t) => t.status === 'pending' || t.status === 'failed'
   )
   for (const t of candidates) {
-    const p = (t.inputPath || '').trim()
-    if (!p) continue
-    const ext = p.includes('.') ? p.slice(p.lastIndexOf('.')).toLowerCase() : ''
-    if (preferImage) {
-      if (imageExts.has(ext)) return p
-    } else {
-      return p
-    }
+    const p = tryPath(t.inputPath || '')
+    if (p) return p
   }
   // image-crop 时若无 pending 图，再扫全部任务
   if (preferImage) {
     for (const t of tasks.value) {
-      const p = (t.inputPath || '').trim()
-      if (!p) continue
-      const ext = p.includes('.') ? p.slice(p.lastIndexOf('.')).toLowerCase() : ''
-      if (imageExts.has(ext)) return p
+      const p = tryPath(t.inputPath || '')
+      if (p) return p
     }
   }
   return candidates[0]?.inputPath?.trim() || ''
 })
+
+function afterCropComposeEdit(): void {
+  writeCropComposeToSelectedTask()
+}
+
+function onCropXChangeUi(v: number): void {
+  onCropXChange(v)
+  afterCropComposeEdit()
+}
+function onCropYChangeUi(v: number): void {
+  onCropYChange(v)
+  afterCropComposeEdit()
+}
+function onCropWChangeUi(v: number): void {
+  onCropWChange(v)
+  afterCropComposeEdit()
+}
+function onCropHChangeUi(v: number): void {
+  onCropHChange(v)
+  afterCropComposeEdit()
+}
+function onComposeIntroPathChangeUi(v: string): void {
+  onComposeIntroPathChange(v)
+  afterCropComposeEdit()
+}
+function onComposeIntroDurationChangeUi(v: number): void {
+  onComposeIntroDurationChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOutroPathChangeUi(v: string): void {
+  onComposeOutroPathChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOutroDurationChangeUi(v: number): void {
+  onComposeOutroDurationChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayPathChangeUi(v: string): void {
+  onComposeOverlayPathChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayPositionChangeUi(v: WatermarkPosition): void {
+  onComposeOverlayPositionChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayOpacityChangeUi(v: number): void {
+  onComposeOverlayOpacityChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayScalePercentChangeUi(v: number): void {
+  onComposeOverlayScalePercentChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayMarginChangeUi(v: number): void {
+  onComposeOverlayMarginChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayStartSecChangeUi(v: number): void {
+  onComposeOverlayStartSecChange(v)
+  afterCropComposeEdit()
+}
+function onComposeOverlayEndSecChangeUi(v: number): void {
+  onComposeOverlayEndSecChange(v)
+  afterCropComposeEdit()
+}
+function onComposeFitIntroOutroChangeUi(v: boolean): void {
+  onComposeFitIntroOutroChange(v)
+  afterCropComposeEdit()
+}
+
+async function onSelectComposeIntroImageUi(): Promise<void> {
+  await onSelectComposeIntroImage()
+  afterCropComposeEdit()
+}
+async function onSelectComposeOutroImageUi(): Promise<void> {
+  await onSelectComposeOutroImage()
+  afterCropComposeEdit()
+}
+async function onSelectComposeOverlayImageUi(): Promise<void> {
+  await onSelectComposeOverlayImage()
+  afterCropComposeEdit()
+}
+
+/** 模式切换守卫：不匹配的 pending/failed 需确认移除 */
+async function handleTaskModeChange(mode: TaskMode): Promise<void> {
+  if (mode === taskMode.value) return
+  const n = getMismatchedPendingCount(mode)
+  if (n > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `有 ${n} 个待处理任务与新模式文件类型不符，是否移除这些任务？`,
+        '切换任务模式',
+        {
+          type: 'warning',
+          confirmButtonText: '移除并切换',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
+      return
+    }
+    removeMismatchedPending(mode)
+  }
+  onTaskModeChange(mode)
+}
 
 const {
   appVersion,
@@ -791,6 +1058,8 @@ async function onResetSettings(): Promise<void> {
         :out-height="outHeight"
         :aspect-ratio="aspectRatio"
         :scale-pad="scalePad"
+        :show-crop-compose-warning="showCropComposeGlobalWarning"
+        :crop-compose-warning-text="cropComposeWarningText"
         @apply-to-pending="applyOptionsToPending"
         @audio-bitrate-change="onAudioBitrateChange"
         @audio-format-change="onAudioFormatChange"
@@ -808,7 +1077,7 @@ async function onResetSettings(): Promise<void> {
         @select-output="onSelectOutput"
         @select-watermark-image="onSelectWatermarkImage"
         @target-size-mb-change="onTargetSizeMbChange"
-        @task-mode-change="onTaskModeChange"
+        @task-mode-change="handleTaskModeChange"
         @trim-end-change="onTrimEndChange"
         @trim-start-change="onTrimStartChange"
         @two-pass-change="onTwoPassChange"
@@ -829,26 +1098,26 @@ async function onResetSettings(): Promise<void> {
         @image-grid-cols-change="onImageGridColsChange"
         @image-gap-change="onImageGapChange"
         @image-background-change="onImageBackgroundChange"
-        @crop-x-change="onCropXChange"
-        @crop-y-change="onCropYChange"
-        @crop-w-change="onCropWChange"
-        @crop-h-change="onCropHChange"
+        @crop-x-change="onCropXChangeUi"
+        @crop-y-change="onCropYChangeUi"
+        @crop-w-change="onCropWChangeUi"
+        @crop-h-change="onCropHChangeUi"
         @concat-prefer-copy-change="onConcatPreferCopyChange"
-        @compose-intro-path-change="onComposeIntroPathChange"
-        @compose-intro-duration-change="onComposeIntroDurationChange"
-        @compose-outro-path-change="onComposeOutroPathChange"
-        @compose-outro-duration-change="onComposeOutroDurationChange"
-        @compose-overlay-path-change="onComposeOverlayPathChange"
-        @compose-overlay-position-change="onComposeOverlayPositionChange"
-        @compose-overlay-opacity-change="onComposeOverlayOpacityChange"
-        @compose-overlay-scale-percent-change="onComposeOverlayScalePercentChange"
-        @compose-overlay-margin-change="onComposeOverlayMarginChange"
-        @compose-overlay-start-sec-change="onComposeOverlayStartSecChange"
-        @compose-overlay-end-sec-change="onComposeOverlayEndSecChange"
-        @compose-fit-intro-outro-change="onComposeFitIntroOutroChange"
-        @select-compose-intro-image="onSelectComposeIntroImage"
-        @select-compose-outro-image="onSelectComposeOutroImage"
-        @select-compose-overlay-image="onSelectComposeOverlayImage"
+        @compose-intro-path-change="onComposeIntroPathChangeUi"
+        @compose-intro-duration-change="onComposeIntroDurationChangeUi"
+        @compose-outro-path-change="onComposeOutroPathChangeUi"
+        @compose-outro-duration-change="onComposeOutroDurationChangeUi"
+        @compose-overlay-path-change="onComposeOverlayPathChangeUi"
+        @compose-overlay-position-change="onComposeOverlayPositionChangeUi"
+        @compose-overlay-opacity-change="onComposeOverlayOpacityChangeUi"
+        @compose-overlay-scale-percent-change="onComposeOverlayScalePercentChangeUi"
+        @compose-overlay-margin-change="onComposeOverlayMarginChangeUi"
+        @compose-overlay-start-sec-change="onComposeOverlayStartSecChangeUi"
+        @compose-overlay-end-sec-change="onComposeOverlayEndSecChangeUi"
+        @compose-fit-intro-outro-change="onComposeFitIntroOutroChangeUi"
+        @select-compose-intro-image="onSelectComposeIntroImageUi"
+        @select-compose-outro-image="onSelectComposeOutroImageUi"
+        @select-compose-overlay-image="onSelectComposeOverlayImageUi"
         @scale-mode-change="onScaleModeChange"
         @out-width-change="onOutWidthChange"
         @out-height-change="onOutHeightChange"
@@ -861,6 +1130,7 @@ async function onResetSettings(): Promise<void> {
           :compact="tasks.length > 0"
           :dragging="dragging"
           :task-mode="taskMode"
+          :show-task-edit-hint="pendingCount > 1"
           @click="onSelectFiles"
       />
 
@@ -875,15 +1145,20 @@ async function onResetSettings(): Promise<void> {
           :has-active="hasActive"
           :has-pending="hasPending"
           :tasks="tasks"
+          :selected-task-id="selectedTaskId"
           @cancel-all="cancelAll"
           @cancel-one="cancelOne"
           @clear-all="clearAll"
           @clear-finished="clearFinished"
           @open-output="openOutput"
           @remove-one="removeOne"
+          @select-task="selectTask"
           @show-in-folder="showInFolder"
           @start-all="startAll"
           @start-one="startOne"
+          @remove-stitch-input="removeStitchInput"
+          @append-stitch-inputs="appendStitchInputs"
+          @reorder-stitch-input="reorderStitchInput"
       />
     </div>
   </div>

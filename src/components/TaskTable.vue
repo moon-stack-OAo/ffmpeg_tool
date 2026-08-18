@@ -12,10 +12,11 @@ import {
   statusType
 } from '../utils/taskUi'
 
-defineProps<{
+const props = defineProps<{
   tasks: CompressTask[]
   hasPending: boolean
   hasActive: boolean
+  selectedTaskId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -24,11 +25,25 @@ const emit = defineEmits<{
   removeOne: [taskId: string]
   openOutput: [task: CompressTask]
   showInFolder: [task: CompressTask]
+  selectTask: [taskId: string]
   startAll: []
   cancelAll: []
   clearFinished: []
   clearAll: []
+  removeStitchInput: [taskId: string, index: number]
+  appendStitchInputs: [taskId: string]
+  reorderStitchInput: [taskId: string, index: number, direction: 'up' | 'down']
 }>()
+
+function onRowClick(row: CompressTask): void {
+  emit('selectTask', row.id)
+}
+
+function rowClassName({ row }: { row: CompressTask }): string {
+  return props.selectedTaskId && row.id === props.selectedTaskId
+    ? 'task-row-selected'
+    : ''
+}
 
 /** 任务模式简写 */
 function modeLabel(task: CompressTask): string {
@@ -48,6 +63,8 @@ function modeTagType(
 
 const detailVisible = ref(false)
 const detailTask = ref<CompressTask | null>(null)
+/** 展开的拼接输入列表 taskId */
+const expandedStitchIds = ref<Set<string>>(new Set())
 
 function openDetail(task: CompressTask): void {
   detailTask.value = task
@@ -69,6 +86,50 @@ function onActionCommand(cmd: string, row: CompressTask): void {
   if (cmd === 'folder') emit('showInFolder', row)
   else if (cmd === 'detail') openDetail(row)
   else if (cmd === 'remove') emit('removeOne', row.id)
+}
+
+function isStitchTask(task: CompressTask): boolean {
+  const m = task.options?.mode
+  return m === 'image-stitch' || m === 'video-concat'
+}
+
+function stitchPaths(task: CompressTask): string[] {
+  const multi = (task.inputPaths || [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+  if (multi.length > 0) return multi
+  const single =
+    typeof task.inputPath === 'string' ? task.inputPath.trim() : ''
+  return single ? [single] : []
+}
+
+function stitchCount(task: CompressTask): number {
+  return stitchPaths(task).length
+}
+
+function isStitchEditable(task: CompressTask): boolean {
+  return (
+    isStitchTask(task) &&
+    (task.status === 'pending' || task.status === 'failed')
+  )
+}
+
+function isStitchExpanded(taskId: string): boolean {
+  return expandedStitchIds.value.has(taskId)
+}
+
+function toggleStitchExpand(taskId: string, e?: Event): void {
+  e?.stopPropagation()
+  const next = new Set(expandedStitchIds.value)
+  if (next.has(taskId)) next.delete(taskId)
+  else next.add(taskId)
+  expandedStitchIds.value = next
+}
+
+function baseName(p: string): string {
+  const s = p.replace(/\\/g, '/')
+  const i = s.lastIndexOf('/')
+  return i >= 0 ? s.slice(i + 1) : s
 }
 </script>
 
@@ -104,8 +165,87 @@ function onActionCommand(cmd: string, row: CompressTask): void {
     </div>
 
     <div class="task-table-body">
-    <el-table :data="tasks" empty-text="暂无任务，请添加文件" height="100%" stripe>
-      <el-table-column label="文件名" min-width="150" prop="fileName" show-overflow-tooltip />
+    <el-table
+      :data="tasks"
+      :row-class-name="rowClassName"
+      empty-text="暂无任务，请添加文件"
+      height="100%"
+      highlight-current-row
+      stripe
+      @row-click="onRowClick"
+    >
+      <el-table-column label="文件名" min-width="180">
+        <template #default="{ row }">
+          <div class="file-cell">
+            <span class="file-name" :title="row.fileName">{{ row.fileName }}</span>
+            <template v-if="isStitchTask(row)">
+              <button
+                type="button"
+                class="stitch-count-btn"
+                :class="{ warn: stitchCount(row) < 2 }"
+                @click="toggleStitchExpand(row.id, $event)"
+              >
+                共 {{ stitchCount(row) }} 个文件
+                <span class="stitch-chevron" :class="{ open: isStitchExpanded(row.id) }">▸</span>
+              </button>
+              <div
+                v-if="isStitchExpanded(row.id)"
+                class="stitch-list"
+                @click.stop
+              >
+                <div
+                  v-for="(p, idx) in stitchPaths(row)"
+                  :key="`${row.id}-${idx}-${p}`"
+                  class="stitch-item"
+                >
+                  <span class="stitch-idx">{{ idx + 1 }}.</span>
+                  <span class="stitch-name" :title="p">{{ baseName(p) }}</span>
+                  <template v-if="isStitchEditable(row)">
+                    <el-button
+                      link
+                      size="small"
+                      :disabled="idx === 0"
+                      @click="emit('reorderStitchInput', row.id, idx, 'up')"
+                    >
+                      上移
+                    </el-button>
+                    <el-button
+                      link
+                      size="small"
+                      :disabled="idx >= stitchPaths(row).length - 1"
+                      @click="emit('reorderStitchInput', row.id, idx, 'down')"
+                    >
+                      下移
+                    </el-button>
+                    <el-button
+                      link
+                      size="small"
+                      type="danger"
+                      :disabled="stitchPaths(row).length <= 1"
+                      @click="emit('removeStitchInput', row.id, idx)"
+                    >
+                      移除
+                    </el-button>
+                  </template>
+                </div>
+                <div v-if="isStitchEditable(row)" class="stitch-actions">
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    @click="emit('appendStitchInputs', row.id)"
+                  >
+                    追加文件
+                  </el-button>
+                  <span v-if="stitchCount(row) < 2" class="stitch-warn">
+                    至少 2 个文件才能启动
+                  </span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="模式" width="64">
         <template #default="{ row }">
           <el-tag
@@ -390,5 +530,108 @@ function onActionCommand(cmd: string, row: CompressTask): void {
 
 .action-danger {
   color: var(--status-bad);
+}
+
+:deep(.task-row-selected > td.el-table__cell) {
+  background: color-mix(in srgb, var(--el-color-primary) 14%, transparent) !important;
+}
+
+:deep(.el-table__body tr.task-row-selected:hover > td.el-table__cell) {
+  background: color-mix(in srgb, var(--el-color-primary) 20%, transparent) !important;
+}
+
+.file-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.stitch-count-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--el-color-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.stitch-count-btn.warn {
+  color: var(--el-color-warning);
+}
+
+.stitch-count-btn:hover {
+  text-decoration: underline;
+}
+
+.stitch-chevron {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.stitch-chevron.open {
+  transform: rotate(90deg);
+}
+
+.stitch-list {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--app-fg) 6%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stitch-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.stitch-idx {
+  color: var(--app-fg-muted);
+  flex-shrink: 0;
+}
+
+.stitch-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-fg-secondary);
+}
+
+.stitch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.stitch-warn {
+  font-size: var(--fs-sm);
+  color: var(--el-color-warning);
 }
 </style>

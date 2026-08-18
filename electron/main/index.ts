@@ -436,44 +436,87 @@ function validateStartTask(
 }
 
 function registerIpc(): void {
-  ipcMain.handle(IpcChannels.SELECT_FILES, async () => {
-    if (!mainWindow) return { files: [] }
+  ipcMain.handle(
+    IpcChannels.SELECT_FILES,
+    async (
+      _e,
+      opts?: {
+        mode?: string
+        mediaKind?: 'video' | 'image' | 'all'
+      }
+    ) => {
+      if (!mainWindow) return { files: [] }
 
-    const videoExts = VIDEO_EXTENSIONS.map((e) => e.replace('.', ''))
-    const imageExts = IMAGE_EXTENSIONS.map((e) => e.replace('.', ''))
-    const mediaExts = Array.from(new Set(videoExts.concat(imageExts)))
+      const videoExts = VIDEO_EXTENSIONS.map((e) => e.replace('.', ''))
+      const imageExts = IMAGE_EXTENSIONS.map((e) => e.replace('.', ''))
+      const mediaExts = Array.from(new Set(videoExts.concat(imageExts)))
 
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择媒体文件',
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        {
-          name: '媒体文件',
-          extensions: mediaExts
-        },
-        {
-          name: '视频文件',
-          extensions: videoExts
-        },
-        {
-          name: '图片文件',
-          extensions: imageExts
-        },
-        { name: '所有文件', extensions: ['*'] }
-      ]
-    })
+      const mode = typeof opts?.mode === 'string' ? opts.mode : ''
+      let kind: 'video' | 'image' | 'all' =
+        opts?.mediaKind === 'video' ||
+        opts?.mediaKind === 'image' ||
+        opts?.mediaKind === 'all'
+          ? opts.mediaKind
+          : 'all'
+      if (mode) {
+        if (
+          mode === 'image' ||
+          mode === 'image-crop' ||
+          mode === 'image-stitch'
+        ) {
+          kind = 'image'
+        } else if (
+          mode === 'compress' ||
+          mode === 'audio' ||
+          mode === 'video-concat' ||
+          mode === 'media-compose'
+        ) {
+          kind = 'video'
+        }
+      }
 
-    if (result.canceled || !result.filePaths.length) {
-      return { files: [] }
+      const title =
+        kind === 'image'
+          ? '选择图片'
+          : kind === 'video'
+            ? '选择视频'
+            : '选择媒体文件'
+
+      const filters =
+        kind === 'image'
+          ? [
+              { name: '图片文件', extensions: imageExts },
+              { name: '所有文件', extensions: ['*'] }
+            ]
+          : kind === 'video'
+            ? [
+                { name: '视频文件', extensions: videoExts },
+                { name: '所有文件', extensions: ['*'] }
+              ]
+            : [
+                { name: '媒体文件', extensions: mediaExts },
+                { name: '视频文件', extensions: videoExts },
+                { name: '图片文件', extensions: imageExts },
+                { name: '所有文件', extensions: ['*'] }
+              ]
+
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title,
+        properties: ['openFile', 'multiSelections'],
+        filters
+      })
+
+      if (result.canceled || !result.filePaths.length) {
+        return { files: [] }
+      }
+
+      const files = result.filePaths
+        .filter(isMediaFile)
+        .map((p) => ({ path: p, name: basename(p) }))
+
+      return { files }
     }
-
-    // 同时允许视频+图片，由渲染进程按当前 taskMode 再过滤
-    const files = result.filePaths
-      .filter(isMediaFile)
-      .map((p) => ({ path: p, name: basename(p) }))
-
-    return { files }
-  })
+  )
 
   ipcMain.handle(IpcChannels.SELECT_DIR, async (_e, defaultPath?: string) => {
     if (!mainWindow) return { path: null }

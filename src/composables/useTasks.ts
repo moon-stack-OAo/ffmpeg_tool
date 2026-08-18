@@ -39,6 +39,8 @@ function needsFfmpeg(mode?: TaskMode | null): boolean {
 /** 压缩任务列表与启停控制 */
 export function useTasks(deps: UseTasksDeps) {
   const tasks = ref<CompressTask[]>([])
+  /** 当前选中的任务（用于任务级裁切/混剪编辑） */
+  const selectedTaskId = ref<string | null>(null)
   /** 最近一次成功添加文件时间戳（拖拽双通道去重用） */
   const lastDropOkAt = ref(0)
   /** 防抖保存定时器 */
@@ -50,9 +52,47 @@ export function useTasks(deps: UseTasksDeps) {
     tasks.value.some((t) => t.status === 'pending' || t.status === 'failed')
   )
 
+  const pendingCount = computed(
+    () =>
+      tasks.value.filter((t) => t.status === 'pending' || t.status === 'failed')
+        .length
+  )
+
   const hasActive = computed(() =>
     tasks.value.some((t) => t.status === 'running' || t.status === 'queued')
   )
+
+  const selectedTask = computed(() => {
+    const id = selectedTaskId.value
+    if (!id) return null
+    return tasks.value.find((t) => t.id === id) || null
+  })
+
+  /** 点击行选中；再点同一行取消 */
+  function selectTask(id: string | null): void {
+    if (id == null || id === '') {
+      selectedTaskId.value = null
+      return
+    }
+    if (selectedTaskId.value === id) {
+      selectedTaskId.value = null
+      return
+    }
+    const t = tasks.value.find((x) => x.id === id)
+    if (!t) {
+      selectedTaskId.value = null
+      return
+    }
+    selectedTaskId.value = id
+  }
+
+  function clearSelectionIfMissing(): void {
+    const id = selectedTaskId.value
+    if (!id) return
+    if (!tasks.value.some((t) => t.id === id)) {
+      selectedTaskId.value = null
+    }
+  }
 
   /** 汇总体积对比（仅已完成任务） */
   const sizeSummary = computed(() => {
@@ -96,18 +136,104 @@ export function useTasks(deps: UseTasksDeps) {
     tasks.value = tasks.value.map((t) => (t.id === id ? { ...t, ...patch } : t))
   }
 
-  /** 将当前选项写回所有待处理 / 失败任务，并清空旧输出路径 */
-  function syncPendingOptions(): void {
-    const opts = deps.buildOptions()
-    tasks.value = tasks.value.map((t) => {
-      if (t.status === 'pending' || t.status === 'failed') {
-        return { ...t, options: { ...opts }, outputPath: '' }
+  /**
+   * 合并启动用 options：安全字段取当前草稿，crop/compose（含 image.crop）优先任务级。
+   * 任务无 crop/compose 时回退草稿，保证单任务未选中时全局裁切仍可生效。
+   */
+  function optionsForStart(task: CompressTask): CompressOptions {
+    const draft = deps.buildOptions()
+    const prev = task.options
+    const next: CompressOptions = {
+      ...draft,
+      outputDir: deps.outputDir.value
+    }
+
+    if (prev?.crop) {
+      next.crop = prev.crop
+    } else if (draft.crop) {
+      next.crop = draft.crop
+    } else {
+      delete next.crop
+    }
+
+    if (prev?.compose) {
+      next.compose = prev.compose
+    } else if (draft.compose) {
+      next.compose = draft.compose
+    } else {
+      delete next.compose
+    }
+
+    if (draft.image || prev?.image) {
+      // 安全字段以草稿为准，crop 优先任务级
+      const merged: NonNullable<CompressOptions['image']> = {
+        ...(prev?.image || {}),
+        ...(draft.image || {})
       }
-      return t
+      const taskCrop = prev?.image?.crop || prev?.crop
+      if (taskCrop) {
+        merged.crop = taskCrop
+      } else if (draft.image?.crop) {
+        merged.crop = draft.image.crop
+      } else {
+        delete merged.crop
+      }
+      next.image = merged
+    }
+
+    return next
+  }
+
+  /**
+   * 将当前选项写回所有待处理 / 失败任务。
+   * 默认不同步 crop / image.crop / compose（任务级字段），除非 includeCropCompose。
+   */
+  function syncPendingOptions(opts?: { includeCropCompose?: boolean }): void {
+    const includeCropCompose = opts?.includeCropCompose === true
+    const draft = deps.buildOptions()
+    tasks.value = tasks.value.map((t) => {
+      if (t.status !== 'pending' && t.status !== 'failed') return t
+      if (includeCropCompose) {
+        return { ...t, options: { ...draft }, outputPath: '' }
+      }
+      const prev = t.options || ({} as CompressOptions)
+      const next: CompressOptions = { ...draft }
+
+      // 保留各任务原有裁切
+      if (prev.crop) {
+        next.crop = prev.crop
+      } else {
+        delete next.crop
+      }
+
+      // image：安全字段用草稿，crop 保留任务级
+      if (draft.image || prev.image) {
+        const merged: NonNullable<CompressOptions['image']> = {
+          ...(prev.image || {}),
+          ...(draft.image || {})
+        }
+        if (prev.image?.crop) {
+          merged.crop = prev.image.crop
+        } else if (prev.crop) {
+          merged.crop = prev.crop
+        } else {
+          delete merged.crop
+        }
+        next.image = merged
+      }
+
+      // compose 保留任务级
+      if (prev.compose) {
+        next.compose = prev.compose
+      } else {
+        delete next.compose
+      }
+
+      return { ...t, options: next, outputPath: '' }
     })
   }
 
-  /** 手动「应用到待处理」：同步 options 并提示 */
+  /** 手动「应用到待处理」：含 crop/compose 全量同步 */
   function applyOptionsToPending(): void {
     const targets = tasks.value.filter(
       (t) => t.status === 'pending' || t.status === 'failed'
@@ -116,8 +242,54 @@ export function useTasks(deps: UseTasksDeps) {
       ElMessage.info('没有待处理或失败的任务')
       return
     }
-    syncPendingOptions()
+    syncPendingOptions({ includeCropCompose: true })
     ElMessage.success(`已将当前选项应用到 ${targets.length} 个任务`)
+  }
+
+  function getExtFromPath(filePath: string): string {
+    const lower = filePath.toLowerCase()
+    const idx = lower.lastIndexOf('.')
+    if (idx < 0) return ''
+    return lower.slice(idx)
+  }
+
+  function isPathAllowedForMode(filePath: string, mode: TaskMode): boolean {
+    const ext = getExtFromPath(filePath)
+    if (!ext) return false
+    if (isImageMode(mode)) {
+      return (IMAGE_EXTENSIONS as string[]).includes(ext)
+    }
+    return (VIDEO_EXTENSIONS as string[]).includes(ext)
+  }
+
+  /** 任务输入是否与目标模式匹配（拼接看全部 inputPaths） */
+  function isTaskMatchedMode(task: CompressTask, mode: TaskMode): boolean {
+    const paths = resolveInputPaths(task)
+    if (!paths.length) return false
+    return paths.every((p) => isPathAllowedForMode(p, mode))
+  }
+
+  function getMismatchedPending(mode: TaskMode): CompressTask[] {
+    return tasks.value.filter(
+      (t) =>
+        (t.status === 'pending' || t.status === 'failed') &&
+        !isTaskMatchedMode(t, mode)
+    )
+  }
+
+  function getMismatchedPendingCount(mode: TaskMode): number {
+    return getMismatchedPending(mode).length
+  }
+
+  /** 移除与目标模式文件类型不符的 pending/failed 任务 */
+  function removeMismatchedPending(mode: TaskMode): number {
+    const removeIds = new Set(getMismatchedPending(mode).map((t) => t.id))
+    if (!removeIds.size) return 0
+    tasks.value = tasks.value.filter((t) => !removeIds.has(t.id))
+    if (selectedTaskId.value && removeIds.has(selectedTaskId.value)) {
+      selectedTaskId.value = null
+    }
+    return removeIds.size
   }
 
   function invalidMediaMessage(mode: TaskMode): string {
@@ -202,8 +374,134 @@ export function useTasks(deps: UseTasksDeps) {
   }
 
   async function onSelectFiles(): Promise<void> {
-    const res = await window.electronAPI.selectFiles()
+    const mode = currentMode()
+    const res = await window.electronAPI.selectFiles({ mode })
     addFiles(res.files)
+  }
+
+  function stitchFileName(mode: TaskMode, n: number): string {
+    return mode === 'image-stitch' ? `拼接 ${n} 张` : `拼接 ${n} 段`
+  }
+
+  function isStitchEditable(task: CompressTask): boolean {
+    const mode = task.options?.mode || currentMode()
+    if (mode !== 'image-stitch' && mode !== 'video-concat') return false
+    return task.status === 'pending' || task.status === 'failed'
+  }
+
+  /** 移除拼接任务中的某一段（至少保留 1 个；少于 2 时标 warning） */
+  function removeStitchInput(taskId: string, index: number): void {
+    const t = tasks.value.find((x) => x.id === taskId)
+    if (!t || !isStitchEditable(t)) {
+      ElMessage.warning('仅待处理或失败的拼接任务可编辑')
+      return
+    }
+    const paths = resolveInputPaths(t)
+    if (index < 0 || index >= paths.length) return
+    if (paths.length <= 1) {
+      ElMessage.warning('至少保留 1 个文件')
+      return
+    }
+    const next = paths.filter((_, i) => i !== index)
+    const mode = (t.options?.mode || currentMode()) as TaskMode
+    const patch: Partial<CompressTask> = {
+      inputPaths: next,
+      inputPath: next[0],
+      fileName: stitchFileName(mode, next.length),
+      outputPath: ''
+    }
+    if (next.length < 2) {
+      patch.error =
+        mode === 'image-stitch'
+          ? '图片拼接至少需要 2 张图片'
+          : '视频拼接至少需要 2 段视频'
+    } else if (
+      t.error &&
+      (t.error.includes('至少需要') || t.error.includes('拼接'))
+    ) {
+      patch.error = undefined
+    }
+    updateTask(taskId, patch)
+  }
+
+  /** 向拼接任务追加文件（弹窗选择，按模式过滤） */
+  async function appendStitchInputs(taskId: string): Promise<void> {
+    const t = tasks.value.find((x) => x.id === taskId)
+    if (!t || !isStitchEditable(t)) {
+      ElMessage.warning('仅待处理或失败的拼接任务可编辑')
+      return
+    }
+    const mode = (t.options?.mode || currentMode()) as TaskMode
+    const res = await window.electronAPI.selectFiles({ mode })
+    const picked = (res.files || []).filter((f) => f.path)
+    if (!picked.length) return
+
+    const existing = resolveInputPaths(t)
+    const existingSet = new Set(existing)
+    const toAdd: string[] = []
+    let skippedInvalid = 0
+    let skippedDup = 0
+    for (const f of picked) {
+      if (!isPathAllowedForMode(f.path, mode)) {
+        skippedInvalid += 1
+        continue
+      }
+      if (existingSet.has(f.path)) {
+        skippedDup += 1
+        continue
+      }
+      toAdd.push(f.path)
+      existingSet.add(f.path)
+    }
+    if (!toAdd.length) {
+      if (skippedDup > 0 && skippedInvalid === 0) {
+        ElMessage.info('所选文件已在列表中')
+      } else {
+        ElMessage.warning(invalidMediaMessage(mode))
+      }
+      return
+    }
+    const next = existing.concat(toAdd)
+    updateTask(taskId, {
+      inputPaths: next,
+      inputPath: next[0],
+      fileName: stitchFileName(mode, next.length),
+      outputPath: '',
+      error:
+        next.length >= 2 &&
+        t.error &&
+        (t.error.includes('至少需要') || t.error.includes('拼接'))
+          ? undefined
+          : t.error
+    })
+    ElMessage.success(`已追加 ${toAdd.length} 个文件`)
+    if (skippedInvalid > 0) {
+      ElMessage.warning(`已忽略 ${skippedInvalid} 个不支持的文件`)
+    }
+  }
+
+  /** 上移/下移拼接输入顺序 */
+  function reorderStitchInput(
+    taskId: string,
+    index: number,
+    direction: 'up' | 'down'
+  ): void {
+    const t = tasks.value.find((x) => x.id === taskId)
+    if (!t || !isStitchEditable(t)) return
+    const paths = resolveInputPaths(t)
+    const j = direction === 'up' ? index - 1 : index + 1
+    if (index < 0 || index >= paths.length || j < 0 || j >= paths.length) {
+      return
+    }
+    const next = paths.slice()
+    const tmp = next[index]
+    next[index] = next[j]
+    next[j] = tmp
+    updateTask(taskId, {
+      inputPaths: next,
+      inputPath: next[0],
+      outputPath: ''
+    })
   }
 
   function requireOutputDir(opts: CompressOptions): boolean {
@@ -260,13 +558,13 @@ export function useTasks(deps: UseTasksDeps) {
     const draftOpts = deps.buildOptions()
     if (!requireOutputDir(draftOpts)) return
 
-    const mode = draftOpts.mode || task.options?.mode || 'compress'
+    const options = optionsForStart(task)
+    const mode = options.mode || task.options?.mode || 'compress'
     if (needsFfmpeg(mode) && !deps.ffmpegStatus.value.ready) {
       ElMessage.error(deps.ffmpegStatus.value.error || 'ffmpeg 未就绪')
       return
     }
 
-    const options = { ...draftOpts, outputDir: deps.outputDir.value }
     const payload: CompressTask = {
       ...task,
       options,
@@ -317,11 +615,11 @@ export function useTasks(deps: UseTasksDeps) {
       return
     }
 
-    const options = { ...draftOpts, outputDir: deps.outputDir.value }
     const payload: CompressTask[] = []
     let skipped = 0
 
     for (const t of candidates) {
+      const options = optionsForStart(t)
       const item: CompressTask = {
         ...t,
         options,
@@ -349,9 +647,9 @@ export function useTasks(deps: UseTasksDeps) {
       return
     }
 
-    for (const t of payload) {
-      updateTask(t.id, {
-        options,
+    for (const item of payload) {
+      updateTask(item.id, {
+        options: item.options,
         outputPath: '',
         status: 'queued',
         progress: 0,
@@ -384,6 +682,7 @@ export function useTasks(deps: UseTasksDeps) {
     tasks.value = tasks.value.filter(
       (t) => t.status === 'pending' || t.status === 'queued' || t.status === 'running'
     )
+    clearSelectionIfMissing()
   }
 
   function clearAll(): void {
@@ -392,6 +691,7 @@ export function useTasks(deps: UseTasksDeps) {
       return
     }
     tasks.value = []
+    selectedTaskId.value = null
   }
 
   function removeOne(taskId: string): void {
@@ -401,6 +701,9 @@ export function useTasks(deps: UseTasksDeps) {
       void cancelOne(taskId)
     }
     tasks.value = tasks.value.filter((x) => x.id !== taskId)
+    if (selectedTaskId.value === taskId) {
+      selectedTaskId.value = null
+    }
   }
 
   /** 打开输出文件 */
@@ -551,12 +854,19 @@ export function useTasks(deps: UseTasksDeps) {
 
   return {
     tasks,
+    selectedTaskId,
+    selectedTask,
+    selectTask,
     lastDropOkAt,
     hasPending,
+    pendingCount,
     hasActive,
     sizeSummary,
     addFiles,
     onSelectFiles,
+    removeStitchInput,
+    appendStitchInputs,
+    reorderStitchInput,
     startOne,
     startAll,
     cancelOne,
@@ -569,6 +879,8 @@ export function useTasks(deps: UseTasksDeps) {
     applyOptionsToPending,
     updateTask,
     syncPendingOptions,
+    getMismatchedPendingCount,
+    removeMismatchedPending,
     loadTasks,
     scheduleSaveTasks,
     subscribe

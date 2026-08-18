@@ -977,6 +977,40 @@ export const TASK_MODE_OPTIONS: Array<{ value: TaskMode; label: string }> = [
   { value: 'media-compose', label: '图+视频' }
 ]
 
+/** 工具分组（首页模式信息架构） */
+export type ToolGroup = 'video' | 'image' | 'compose'
+
+export const TOOL_GROUP_OPTIONS: Array<{ value: ToolGroup; label: string }> = [
+  { value: 'video', label: '视频工具' },
+  { value: 'image', label: '图片工具' },
+  { value: 'compose', label: '合成' }
+]
+
+/** 各工具组下的二级任务模式 */
+export const TOOL_GROUP_MODES: Record<ToolGroup, TaskMode[]> = {
+  video: ['compress', 'audio', 'video-concat'],
+  image: ['image', 'image-crop', 'image-stitch'],
+  compose: ['media-compose']
+}
+
+export function toolGroupOfMode(mode: TaskMode): ToolGroup {
+  if (mode === 'image' || mode === 'image-crop' || mode === 'image-stitch') {
+    return 'image'
+  }
+  if (mode === 'media-compose') return 'compose'
+  return 'video'
+}
+
+/** 选择文件对话框：按媒体类型过滤 */
+export type SelectFilesMediaKind = 'video' | 'image' | 'all'
+
+export interface SelectFilesOptions {
+  /** 任务模式（优先于 mediaKind 推导过滤） */
+  mode?: TaskMode
+  /** 媒体类型；mode 未传时使用 */
+  mediaKind?: SelectFilesMediaKind
+}
+
 /** 音频格式选项（UI） */
 export const AUDIO_FORMAT_OPTIONS: Array<{ value: AudioFormat; label: string }> = [
   { value: 'm4a', label: 'M4A (AAC)' },
@@ -1087,7 +1121,7 @@ export function formatSaveRatio(
 
 /** Preload 暴露给渲染进程的 API */
 export interface ElectronAPI {
-  selectFiles: () => Promise<AddFilesResult>
+  selectFiles: (opts?: SelectFilesOptions) => Promise<AddFilesResult>
   /** defaultPath：打开对话框时的初始目录（如当前输出目录） */
   selectDirectory: (defaultPath?: string) => Promise<SelectDirResult>
   /** 选择水印图片（单选 png/jpg/webp/bmp） */

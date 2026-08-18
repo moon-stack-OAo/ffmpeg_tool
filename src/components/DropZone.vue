@@ -8,6 +8,8 @@ const props = defineProps<{
   /** 有任务时压缩高度，把空间留给任务列表 */
   compact?: boolean
   taskMode?: TaskMode
+  /** 多任务时提示可选中任务单独编辑裁切 */
+  showTaskEditHint?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,10 +36,14 @@ const title = computed(() => {
 
 const hint = computed(() => {
   const m = props.taskMode || 'compress'
-  if (m === 'image' || m === 'image-crop' || m === 'image-stitch') {
-    return '支持 jpg / png / webp / bmp / tiff 等 · 可拖到窗口任意位置'
+  let base =
+    m === 'image' || m === 'image-crop' || m === 'image-stitch'
+      ? '支持 jpg / png / webp / bmp / tiff 等 · 可拖到窗口任意位置'
+      : '支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置'
+  if (props.showTaskEditHint) {
+    base += ' · 选中任务可单独编辑裁切/混剪'
   }
-  return '支持 mp4 / mkv / mov / avi / webm 等 · 可拖到窗口任意位置'
+  return base
 })
 
 const step1 = computed(() => {
